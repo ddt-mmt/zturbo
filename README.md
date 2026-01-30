@@ -1,6 +1,6 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-**ZTURBO** adalah TUI (Text User Interface) wrapper yang cerdas untuk \`rsync\` dan \`fpsync\`. Dirancang khusus untuk memindahkan data dalam jumlah besar (Big Data) antar server Linux dengan efisiensi tinggi, dilengkapi dengan sistem monitoring real-time dan fitur keamanan proses.
+**ZTURBO** adalah TUI (Text User Interface) wrapper yang cerdas untuk `rsync` dan `fpsync`. Dirancang khusus untuk memindahkan data dalam jumlah besar (Big Data) antar server Linux dengan efisiensi tinggi.
 
 > **Status:** Production Ready (v1.3)
 > **Engine:** Hybrid (Rsync + Fpsync)
@@ -10,25 +10,21 @@
 ## ✨ Fitur Utama
 
 * **⚡ Mode Hybrid:**
-    * **SAFE MODE:** Menggunakan standard \`rsync\` dengan limitasi resource (cocok untuk jam kerja).
-    * **TURBO MODE:** Menggunakan \`fpsync\` multi-threading untuk menghabiskan bandwidth yang tersedia (cocok untuk window maintenance).
-* **🛒 Multi-Select Batch:** Pilih banyak file dan folder sekaligus (sistem keranjang/checklist) untuk dikirim dalam satu kali proses.
+    * **SAFE MODE:** Menggunakan standard `rsync` (aman untuk jam kerja).
+    * **TURBO MODE:** Menggunakan `fpsync` multi-threading (ngebut untuk maintenance).
+* **🛒 Multi-Select Batch:** Pilih banyak file/folder sekaligus untuk dikirim.
 * **🧠 Smart Resume:** Otomatis melanjutkan transfer yang terputus.
-* **🛡️ Integrity Check:** Verifikasi otomatis di akhir proses (Byte-count & File-count audit).
-* **🧟 Zombie Slayer (ZMTURBO):** Monitor yang mampu membunuh proses macet hingga ke akarnya (Process Group ID).
+* **🛡️ Integrity Check:** Verifikasi otomatis Byte-count & File-count.
+* **🧟 Zombie Slayer:** Monitor (ZMTURBO) mampu membunuh proses macet hingga ke akarnya.
 
 ---
 
-## 📸 Tutorial & Tampilan
+## 📸 Tampilan (Preview)
 
-### 1. ZTURBO (Engine Transfer)
+### 1. Menu Transfer (ZTURBO)
+Tampilan saat memilih file dengan fitur Multi-Select.
 
-Jalankan perintah \`sudo zturbo\`. Anda akan disuguhkan menu interaktif.
-
-**Langkah 1: Multi-Select Source**
-Gunakan \`s <nomor>\` untuk memilih file/folder, atau \`a\` untuk Select All.
-
-\`\`\`text
+```text
 ==========================================
        ZTURBO - DATA TRANSFER ENGINE      
 ==========================================
@@ -44,84 +40,28 @@ Gunakan \`s <nomor>\` untuk memilih file/folder, atau \`a\` untuk Select All.
  [Num] Enter Folder | [s Num] Toggle | [d] Done
 ------------------------------------------
  👉 INPUT > d
-\`\`\`
 
-**Langkah 2: Konfirmasi Final**
-Review apa saja yang akan dikirim sebelum eksekusi.
+📦 Instalasi
+Clone Repository:
 
-\`\`\`text
-[ FINAL CONFIRMATION ]
+Bash
+git clone [https://github.com/ddt-mmt/zturbo.git](https://github.com/ddt-mmt/zturbo.git)
+cd zturbo
+Jalankan Installer:
 
- [1] SOURCE  : 
-     - /mnt/data/Project_Alpha/2024_Backup/
-     - /mnt/data/Project_Alpha/config.yaml
- [2] DEST    : /mnt/backup_server/Daily/
- [3] FOLDER  : . (Default: Current Dir)
- [4] THREADS : 22 (TURBO MODE)
- [5] MODE    : TURBO
+Bash
+chmod +x install.sh
+sudo ./install.sh
+Selesai!
 
- ⚠️  To START, Type 'OK' and Press Enter.
-\`\`\`
+Transfer: zturbo
 
----
+Monitor: zmturbo
 
-### 2. ZMTURBO (Monitoring Center)
+⚙️ Persyaratan
+OS: Linux (Ubuntu/Debian/CentOS).
 
-Jalankan perintah \`sudo zmturbo\` di terminal terpisah untuk memantau trafik.
+Tools: rsync, fpart (wajib untuk Turbo Mode).
 
-**Dashboard Monitoring**
-Melihat progress bar, penggunaan CPU/RAM per job, dan status kesehatan server.
-
-\`\`\`text
-=== ZMTURBO V1.1: MONITORING CENTER ===
-HOST: Server-JKT | IP: 10.28.12.105 | LOGIN: admin
-HEALTH: CPU Load: 2.45 | RAM: 12GB / 64GB (18%)
-
-[ A. ACTIVE TRANSFERS ]
-PID     USER     CPU%  MEM%  PROGRESS          SIZE     DESTINATION
---------------------------------------------------------------------------
-45120   didit    85%   2.1%  [#######.......]  45.2GB   .../2024_Backup
-45199   root     12%   0.5%  [#############.]  1.2GB    .../SysLog
-
-[ B. STORAGE STATUS ]
-MOUNT                SIZE      FREE      SOURCE
-/mnt/data            10T       2.4T      /dev/sdb1
-/mnt/backup          50T       41T       192.168.1.20:/volume1
-
-[R] REFRESH | [K] KILL MENU | [H] HISTORY TABLE | [Q] QUIT
-\`\`\`
-
----
-
-## 📦 Instalasi
-
-1.  **Clone Repository:**
-    \`\`\`bash
-    git clone https://github.com/ddt-mmt/zturbo.git
-    cd zturbo
-    \`\`\`
-
-2.  **Jalankan Installer (Otomatis):**
-    \`\`\`bash
-    chmod +x install.sh
-    sudo ./install.sh
-    \`\`\`
-
-3.  **Selesai!** Jalankan langsung:
-    * Transfer: \`zturbo\`
-    * Monitor: \`zmturbo\`
-
----
-
-## ⚙️ Persyaratan Sistem
-
-* **OS:** Linux (Ubuntu, Debian, CentOS, RHEL, AlmaLinux).
-* **Dependencies:** \`rsync\`, \`fpart\` (wajib untuk mode Turbo).
-* **Hardware:** Disarankan minimal 2 Core CPU untuk multitasking efektif.
-
----
-
-## 🤝 Kontribusi & Lisensi
-
-Dibuat dengan ❤️ oleh **Didit** untuk kebutuhan operasional High-Performance Computing.
-Lisensi: **MIT License**.
+🤝 Lisensi
+MIT License - Created by Didit.
