@@ -461,10 +461,20 @@ if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
         EXIT_CODE=0
         for s in "${SELECTED_PATHS[@]}"; do
             echo ">> Processing: $(basename "$s")" | tee -a "$REPORT_TXT"
-            $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
-            -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
-            "$s" "$DEST" >> "$REPORT_TXT" 2>&1
-            [ $? -ne 0 ] && EXIT_CODE=1
+            
+            # HYBRID LOGIC: Use fpsync for folders, rsync for single files
+            if [ -d "$s" ]; then
+                $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
+                -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
+                "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                RET=$?
+            else
+                # Single file -> Use RSYNC (Faster/Safer for single blob)
+                $PREFIX rsync -av --progress "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                RET=$?
+            fi
+            
+            [ $RET -ne 0 ] && EXIT_CODE=1
         done
     fi
 else
@@ -472,11 +482,17 @@ else
         $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
         EXIT_CODE=$?
     else 
-        # OPTIMIZATION: Removed --checksum for raw speed in Turbo mode
-        $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
-        -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
-        "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
-        EXIT_CODE=$?
+        # SINGLE ITEM TURBO CHECK
+        if [ -d "${SELECTED_PATHS[0]}" ]; then
+            $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
+            -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
+            "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+            EXIT_CODE=$?
+        else
+             # Single file in Turbo mode -> Fallback to rsync
+             $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+             EXIT_CODE=$?
+        fi
     fi
 fi
 
