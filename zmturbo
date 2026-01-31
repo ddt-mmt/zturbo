@@ -258,8 +258,25 @@ while true; do
                 echo -e "\n${BOLD_RED}WARNING: Terminating Process Group $t_pid.${NC}"
                 read -p "Confirm Kill? (y/n): " confirm
                 if [[ "${confirm^^}" == "Y" ]]; then
+                    # 1. Kill Process Group (Parent & Attached Children)
                     PGID=$(ps -o pgid= -p $t_pid 2>/dev/null | grep -o '[0-9]*')
-                    if [ -n "$PGID" ]; then kill -TERM -- -"$PGID" 2>/dev/null; sleep 0.5; kill -KILL -- -"$PGID" 2>/dev/null; else pkill -P $t_pid; kill $t_pid; fi
+                    if [ -n "$PGID" ]; then 
+                        kill -TERM -- -"$PGID" 2>/dev/null
+                        sleep 0.5
+                        kill -KILL -- -"$PGID" 2>/dev/null
+                    else 
+                        pkill -P $t_pid; kill $t_pid
+                    fi
+                    
+                    # 2. Deep Clean / Zombie Hunter (The fix for "Useless Kill")
+                    # If destination folder is locked by orphans, kill them too.
+                    # Parse dest from info file again to be sure
+                    IFS='|' read -r _ _ _ _ t_dest _ _ < "$DASHBOARD_DIR/$t_pid.info"
+                    if [ -n "$t_dest" ] && [ -d "$t_dest" ] && [ "$t_dest" != "/" ]; then
+                         echo -e " ${BOLD_RED}🧹 Deep cleaning (fuser) locked files...${NC}"
+                         fuser -k -9 -m "$t_dest" >/dev/null 2>&1
+                    fi
+
                     rm -f "$DASHBOARD_DIR/"*"${t_pid}.info"
                     sleep 1
                 fi
