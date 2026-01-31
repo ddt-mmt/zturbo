@@ -447,12 +447,8 @@ PID_CALC=$!
 
 if [ "$CURRENT_MODE" == "SAFE" ]; then 
     PREFIX="nice -n 10 ionice -c 2 -n 7"
-    SSH_CMD=""
 else 
     PREFIX=""
-    # OPTIMIZATION: Use lightweight cipher for high-speed routing (Inter-VLAN)
-    # Define just the internal SSH command string
-    SSH_CMD="ssh -T -c aes128-gcm -o Compression=no -x"
 fi
 
 # Start Dynamic Governor (Adaptive Priority)
@@ -470,15 +466,12 @@ if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
         for s in "${SELECTED_PATHS[@]}"; do
             echo ">> Processing: $(basename "$s")" | tee -a "$REPORT_TXT"
             if [ -d "$s" ]; then
-                # fpsync handles -o options differently (passes to rsync via -o)
-                # We need to pass the SSH command correctly
                 $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
-                -o "-e '$SSH_CMD' -lptgoD --numeric-ids --no-compress --info=progress2" \
+                -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
                 "$s" "$DEST" >> "$REPORT_TXT" 2>&1
                 RET=$?
             else
-                # Single file -> rsync needs -e "ssh ..."
-                $PREFIX rsync -av --progress -e "$SSH_CMD" "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                $PREFIX rsync -av --progress "$s" "$DEST" >> "$REPORT_TXT" 2>&1
                 RET=$?
             fi
             [ $RET -ne 0 ] && EXIT_CODE=1
@@ -491,11 +484,11 @@ else
     else 
         if [ -d "${SELECTED_PATHS[0]}" ]; then
             $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
-            -o "-e '$SSH_CMD' -lptgoD --numeric-ids --no-compress --info=progress2" \
+            -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
             "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
             EXIT_CODE=$?
         else
-             $PREFIX rsync -av --progress -e "$SSH_CMD" "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+             $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
              EXIT_CODE=$?
         fi
     fi
