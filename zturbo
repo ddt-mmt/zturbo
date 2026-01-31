@@ -461,21 +461,50 @@ if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
         $PREFIX rsync -av --progress "${SELECTED_PATHS[@]}" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
         EXIT_CODE=$?
     else
-        echo ">> Multi-select detected. Running Parallel Engine (TURBO) for each item..."
+        echo ">> Multi-select detected. Running Parallel Engine (TURBO)..."
+        echo "   (Files run in background, Folders run sequentially)"
         EXIT_CODE=0
+        BG_PIDS=()
+        
+        wait_bg_files() {
+            if [ ${#BG_PIDS[@]} -gt 0 ]; then
+                echo ">> [Queue] Waiting for ${#BG_PIDS[@]} pending file transfers..." | tee -a "$REPORT_TXT"
+                wait "${BG_PIDS[@]}" 2>/dev/null
+                BG_PIDS=()
+            fi
+        }
+
         for s in "${SELECTED_PATHS[@]}"; do
-            echo ">> Processing: $(basename "$s")" | tee -a "$REPORT_TXT"
             if [ -d "$s" ]; then
+                # FOLDER FOUND: Flush background files first to free up bandwidth
+                wait_bg_files
+                
+                echo ">> [Folder] Processing: $(basename "$s")" | tee -a "$REPORT_TXT"
                 $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
                 -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
                 "$s" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
                 RET=$?
+                [ $RET -ne 0 ] && EXIT_CODE=1
             else
-                $PREFIX rsync -av --progress "$s" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
-                RET=$?
+                # FILE FOUND: Run in background (Parallel)
+                fname=$(basename "$s")
+                echo ">> [File] Background Start: $fname" | tee -a "$REPORT_TXT"
+                
+                # Run rsync silently (log only) to avoid terminal chaos
+                (
+                    $PREFIX rsync -av "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                    if [ $? -eq 0 ]; then
+                        echo ">> [File] ✅ DONE: $fname" | tee -a "$REPORT_TXT"
+                    else
+                        echo ">> [File] ❌ FAIL: $fname" | tee -a "$REPORT_TXT"
+                        exit 1
+                    fi
+                ) &
+                BG_PIDS+=($!)
             fi
-            [ $RET -ne 0 ] && EXIT_CODE=1
         done
+        # Final wait for any remaining files
+        wait_bg_files
     fi
 else
     if [ "$CURRENT_MODE" == "SAFE" ]; then 
