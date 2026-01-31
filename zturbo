@@ -194,7 +194,7 @@ select_source() {
             done
             
             if [ "$NAV_PATH" == "$MOUNT_ROOT" ] || [ "$NAV_PATH" == "/" ]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up One Level (..)"; fi
-            show_footer "[#] Enter Folder | [S #] Toggle | [A] All | [D] Done | [B] $BACK_MSG"
+            show_footer "[#] Enter Folder | [S #] Toggle | [A] All | [C] Clear | [D] Done | [B] $BACK_MSG"
             read inp || exit 1
             
             if [[ "${inp^^}" == "Q" ]]; then exit 0; fi
@@ -212,6 +212,11 @@ select_source() {
                  done
                  continue
             fi
+            if [[ "${inp^^}" == "C" ]]; then
+                SELECTED_PATHS=()
+                SELECTED_NAMES=()
+                continue
+            fi
             if [[ "$inp" =~ ^[sS][[:space:]]*([0-9]+)$ ]]; then
                 num="${BASH_REMATCH[1]}"
                 if [ "$num" -lt "$count" ] && [ "$num" -gt 0 ]; then
@@ -225,13 +230,7 @@ select_source() {
             fi
             if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -lt "$count" ]; then
                 idx=$((inp-1)); sel="${contents[$idx]}"; target="${NAV_PATH%/}/$sel"
-                if [ -d "$target" ]; then NAV_PATH="$target"
-                else 
-                     found_idx=-1
-                    for i in "${!SELECTED_PATHS[@]}"; do if [[ "${SELECTED_PATHS[$i]}" == "$target" ]]; then found_idx=$i; break; fi; done
-                    if [ $found_idx -ge 0 ]; then unset 'SELECTED_PATHS[found_idx]'; unset 'SELECTED_NAMES[found_idx]'; SELECTED_PATHS=("${SELECTED_PATHS[@]}"); SELECTED_NAMES=("${SELECTED_NAMES[@]}")
-                    else SELECTED_PATHS+=("$target"); SELECTED_NAMES+=("$sel"); fi
-                fi
+                if [ -d "$target" ]; then NAV_PATH="$target"; else echo -e "${BOLD_RED}Use 's $inp' to select this file.${NC}"; sleep 1; fi
             fi
         done
         if [ "$BREAK_SRC" = true ]; then return 0; fi
@@ -361,7 +360,20 @@ while true; do
             MODE_MSG="${BOLD_RED}TURBO (ADAPTIVE)${NC}"
         fi
         
-        if [ "$SUB_FOLDER" == "." ]; then DEST="${DEST_ROOT%/}/"; else DEST="${DEST_ROOT%/}/$SUB_FOLDER/"; fi
+        # FIX: Trailing Slash Logic
+        # If user selected a single file as source, destination should NOT end with slash if we are renaming/targeting it
+        # But actually, rsync handles dest folder fine.
+        # The issue is likely how SUB_FOLDER is appended.
+        
+        if [ "$SUB_FOLDER" == "." ]; then 
+            DEST="${DEST_ROOT%/}/"
+        else 
+            DEST="${DEST_ROOT%/}/$SUB_FOLDER"
+            # Only append slash if it is intended as a directory
+            if [ -d "${SELECTED_PATHS[0]}" ]; then
+                DEST="$DEST/"
+            fi
+        fi
         
         print_header
         echo -e "${BOLD_YELLOW}[ FINAL CONFIRMATION ]${NC}"
