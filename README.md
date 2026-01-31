@@ -147,12 +147,13 @@ REFRESH_RATE=2            # Interval refresh dashboard (detik)
 
 ---
 
-## 📂 Lokasi Log & Report
+## 📁 Struktur Project
 
-*   **Dashboard Cache**: `/tmp/zturbo_dashboard/`
-*   **Laporan Transfer**: `/tmp/zturbo_reports/`
-
-Untuk membersihkan log lama, sistem secara otomatis menghapus laporan yang berusia lebih dari 7 hari saat `zturbo` dijalankan.
+- `zturbo`: Engine utama (Versi Optimized).
+- `zmturbo`: Dashboard monitoring (Versi Optimized).
+- `base-script/`: Folder berisi script dasar atau versi alternatif.
+- `install.sh`: Script instalasi otomatis.
+- `README.md`: Dokumentasi project.
 
 ---
 

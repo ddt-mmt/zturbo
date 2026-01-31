@@ -13,8 +13,8 @@ fi
 
 echo ">> Installing scripts..."
 mkdir -p /usr/local/bin
-cp src/zturbo /usr/local/bin/
-cp src/zmturbo /usr/local/bin/
+cp base-script/zturbo /usr/local/bin/
+cp base-script/zmturbo /usr/local/bin/
 chmod +x /usr/local/bin/zturbo /usr/local/bin/zmturbo
 
 echo "✅ ZTURBO Installed! Run 'zturbo' to start."
