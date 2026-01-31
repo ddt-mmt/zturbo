@@ -151,7 +151,6 @@ REFRESH_RATE=2            # Interval refresh dashboard (detik)
 
 - `zturbo`: Engine utama (Versi Optimized).
 - `zmturbo`: Dashboard monitoring (Versi Optimized).
-- `base-script/`: Folder berisi script dasar atau versi alternatif.
 - `install.sh`: Script instalasi otomatis.
 - `README.md`: Dokumentasi project.
 
