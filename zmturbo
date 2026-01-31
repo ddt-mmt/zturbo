@@ -116,45 +116,47 @@ while true; do
                 fi
 
                 CACHE_FILE="/tmp/zmturbo_cache_$pid"
-
-                if [ "$total" == "CALC" ]; then 
-                    PERC_TXT="Calc"; BAR=$(draw_bar 0); CURR_FMT="?"; SPEED_TXT="-"; ETA_TXT="-"
-                else
-                    # OPTIMIZED DISK CHECK
-                    curr=0
-                    if [ "$RUN_DU" = true ]; then
-                         curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
-                         [ -n "$curr" ] && echo "$curr" > "$CACHE_FILE"
-                         
-                         # SPEED & ETA CALCULATION
-                         if [ -n "${PREV_SIZE[$pid]}" ]; then
-                             delta_bytes=$(( curr - ${PREV_SIZE[$pid]} ))
-                             delta_time=$(( NOW_TS - ${PREV_TIME[$pid]} ))
-                             if [ $delta_time -gt 0 ] && [ $delta_bytes -ge 0 ]; then
-                                 spd=$(( delta_bytes / delta_time ))
-                                 if [ $spd -gt 0 ]; then
+                curr=0
+                
+                # OPTIMIZED DISK CHECK (Run every 10s via LOOP_IDX)
+                if [ "$RUN_DU" = true ]; then
+                     curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
+                     [ -n "$curr" ] && echo "$curr" > "$CACHE_FILE"
+                     
+                     # SPEED & ETA CALCULATION
+                     if [ -n "${PREV_SIZE[$pid]}" ]; then
+                         delta_bytes=$(( curr - ${PREV_SIZE[$pid]} ))
+                         delta_time=$(( NOW_TS - ${PREV_TIME[$pid]} ))
+                         if [ $delta_time -gt 0 ] && [ $delta_bytes -ge 0 ]; then
+                             spd=$(( delta_bytes / delta_time ))
+                             if [ $spd -gt 0 ]; then
+                                 SPEED_TXT="$(fmt_size $spd)/s"
+                                 if [[ "$total" =~ ^[0-9]+$ ]] && [ "$total" -gt 0 ]; then
                                      rem_bytes=$(( total - curr ))
                                      eta_sec=$(( rem_bytes / spd ))
                                      ETA_TXT=$(fmt_time $eta_sec)
-                                     SPEED_TXT="$(fmt_size $spd)/s"
                                  else
-                                     SPEED_TXT="0B/s"; ETA_TXT="Stalled"
+                                     ETA_TXT="?"
                                  fi
+                             else
+                                 SPEED_TXT="0B/s"; ETA_TXT="Stalled"
                              fi
                          fi
-                         PREV_SIZE[$pid]=$curr
-                         PREV_TIME[$pid]=$NOW_TS
-                         
-                         # Cache Speed/ETA
-                         echo "$SPEED_TXT|$ETA_TXT" > "${CACHE_FILE}_meta"
-                    else
-                         if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
-                         if [ -f "${CACHE_FILE}_meta" ]; then IFS='|' read -r SPEED_TXT ETA_TXT < "${CACHE_FILE}_meta"; fi
-                    fi
-                    [ -z "$curr" ] && curr=0
-                    [ -z "$SPEED_TXT" ] && SPEED_TXT="-"
-                    [ -z "$ETA_TXT" ] && ETA_TXT="-"
+                     fi
+                     PREV_SIZE[$pid]=$curr; PREV_TIME[$pid]=$NOW_TS
+                     echo "$SPEED_TXT|$ETA_TXT" > "${CACHE_FILE}_meta"
+                else
+                     if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
+                     if [ -f "${CACHE_FILE}_meta" ]; then IFS='|' read -r SPEED_TXT ETA_TXT < "${CACHE_FILE}_meta"; fi
+                fi
 
+                [ -z "$curr" ] && curr=0
+                [ -z "$SPEED_TXT" ] && SPEED_TXT="-"
+                [ -z "$ETA_TXT" ] && ETA_TXT="-"
+
+                if [ "$total" == "CALC" ]; then 
+                    PERC_TXT="Calc"; BAR=$(draw_bar 0); CURR_FMT=$(fmt_size $curr)
+                else
                     if [ "$total" -gt 0 ]; then perc=$((curr * 100 / total)); else perc=0; fi
                     [ $perc -gt 100 ] && perc=100
                     PERC_TXT="${perc}%"; BAR=$(draw_bar $perc); CURR_FMT=$(fmt_size $curr)
