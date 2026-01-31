@@ -474,9 +474,21 @@ dynamic_governor &
 GOV_PID=$!
 
 if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
-    echo ">> Multi-select detected. Using RSYNC (Safe Mode) for batch integrity."
-    $PREFIX rsync -av --progress "${SELECTED_PATHS[@]}" "$DEST" >> "$REPORT_TXT" 2>&1
-    EXIT_CODE=$?
+    if [ "$CURRENT_MODE" == "SAFE" ]; then
+        echo ">> Multi-select detected. Using RSYNC (Safe Mode) for batch integrity."
+        $PREFIX rsync -av --progress "${SELECTED_PATHS[@]}" "$DEST" >> "$REPORT_TXT" 2>&1
+        EXIT_CODE=$?
+    else
+        echo ">> Multi-select detected. Running Parallel Engine (TURBO) for each item..."
+        EXIT_CODE=0
+        for s in "${SELECTED_PATHS[@]}"; do
+            echo ">> Processing: $(basename "$s")" | tee -a "$REPORT_TXT"
+            $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
+            -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
+            "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+            [ $? -ne 0 ] && EXIT_CODE=1
+        done
+    fi
 else
     if [ "$CURRENT_MODE" == "SAFE" ]; then 
         $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
