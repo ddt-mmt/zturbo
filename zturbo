@@ -71,7 +71,8 @@ check_deps
 
 cleanup() {
     rm -f "$MONITOR_FILE"
-    rm -f /tmp/dt_src_$$ /tmp/dt_dest_$$ 2>/dev/null
+    rm -f /tmp/dt_src_$$ /tmp/dt_dest_$$ /tmp/zturbo_size_$$ 2>/dev/null
+    if [ -n "$GOV_PID" ]; then kill $GOV_PID 2>/dev/null; fi
     if [ "$JOB_COMPLETED" = false ]; then
         if [ -f "$REPORT_TXT" ]; then
             echo -e "\nSTATUS      : CANCELLED/FAILED (Interrupted)" >> "$REPORT_TXT"
@@ -82,6 +83,41 @@ cleanup() {
 }
 trap cleanup EXIT
 trap "exit 1" INT TERM
+
+# --- DYNAMIC GOVERNOR (AUTO-ADAPTIVE) ---
+dynamic_governor() {
+    # Only active in TURBO mode to manage high loads
+    if [ "$CURRENT_MODE" != "TURBO" ]; then return; fi
+    
+    local pgid=$(ps -o pgid= -p $$ | xargs)
+    local state="NORMAL"
+    
+    while true; do
+        # Get Load Average (1 minute)
+        # Using /proc/loadavg is lighter than uptime/awk
+        read load_1 _ < /proc/loadavg
+        load_int=${load_1%%.*} # Integer part
+        
+        # Threshold: If Load > Total Cores, system is busy
+        core_limit=$(nproc)
+        busy_limit=$(( core_limit + 2 )) # Slight buffer
+        
+        if [ "$load_int" -ge "$busy_limit" ]; then
+            if [ "$state" != "YIELD" ]; then
+                # Server is overloaded -> Lower priority significantly
+                renice -n 15 -g "$pgid" >/dev/null 2>&1
+                state="YIELD"
+            fi
+        else
+            if [ "$state" != "NORMAL" ]; then
+                # Server is fine -> Restore normal priority
+                renice -n 0 -g "$pgid" >/dev/null 2>&1
+                state="NORMAL"
+            fi
+        fi
+        sleep 5
+    done
+}
 
 print_header() {
     clear
@@ -410,18 +446,32 @@ for s in "${SELECTED_PATHS[@]}"; do echo " - $s" >> "$REPORT_TXT"; done
 echo "================================================================" >> "$REPORT_TXT"
 echo "LOGS START:" >> "$REPORT_TXT"
 
-echo ">> Calculating Source Metadata (Initial)..."
-SRC_BYTES=0
-for s in "${SELECTED_PATHS[@]}"; do
-    sb=$(du -sb "$s" 2>/dev/null | cut -f1)
-    SRC_BYTES=$((SRC_BYTES + sb))
-done
-
 if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then MON_SRC="${SELECTED_PATHS[0]}..++"; else MON_SRC="${SELECTED_PATHS[0]}"; fi
-echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$SRC_BYTES|$(date +%s)" > "$MONITOR_FILE"
+MON_START_TIME=$(date +%s)
+
+# Initial Monitor File with CALC (Non-blocking UI)
+echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|CALC|$MON_START_TIME" > "$MONITOR_FILE"
 chmod 666 "$MONITOR_FILE" 2>/dev/null
 
+echo ">> Calculating Source Metadata (Background)..."
+(
+    CALC_BYTES=0
+    for s in "${SELECTED_PATHS[@]}"; do
+        sb=$(du -sb "$s" 2>/dev/null | cut -f1)
+        CALC_BYTES=$((CALC_BYTES + sb))
+    done
+    # Update Monitor File with real size
+    echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$CALC_BYTES|$MON_START_TIME" > "$MONITOR_FILE"
+    # Save for main process
+    echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
+) &
+PID_CALC=$!
+
 if [ "$CURRENT_MODE" == "SAFE" ]; then PREFIX="nice -n 10 ionice -c 2 -n 7"; else PREFIX=""; fi
+
+# Start Dynamic Governor (Adaptive Priority)
+dynamic_governor &
+GOV_PID=$!
 
 if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
     echo ">> Multi-select detected. Using RSYNC (Safe Mode) for batch integrity."
@@ -441,6 +491,17 @@ else
 fi
 
 JOB_COMPLETED=true
+
+# Retrieve Calculated Source Size (if background calc finished)
+wait $PID_CALC
+if [ -f "/tmp/zturbo_size_$$" ]; then
+    SRC_BYTES=$(cat "/tmp/zturbo_size_$$")
+    rm -f "/tmp/zturbo_size_$$"
+else
+    # Fallback if file missing (should not happen)
+    SRC_BYTES=0
+fi
+
 echo -e "\n${BOLD_YELLOW}🔎 VERIFYING DATA INTEGRITY (PARALLEL CHECK)...${NC}"
 
 # OPTIMIZATION: Parallel Calculation
