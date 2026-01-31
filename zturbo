@@ -271,7 +271,12 @@ select_dest() {
             echo -e " ----------------------------------------"
             for item in "${contents[@]}"; do
                 fp="${NAV_PATH%/}/$item"
-                if [ -d "$fp" ]; then echo -e " [$count] 📁 ${BOLD_CYAN}$item/${NC}"; ((count++)); fi
+                if [ -d "$fp" ]; then 
+                    echo -e " [$count] 📁 ${BOLD_CYAN}$item/${NC}"
+                else
+                    echo -e " [$count] 📄 $item"
+                fi
+                ((count++))
             done
             
             if [ "$NAV_PATH" == "$MOUNT_ROOT" ] || [ "$NAV_PATH" == "/" ]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up One Level (..)"; fi
@@ -281,9 +286,8 @@ select_dest() {
             if [[ "$inp" == "0" ]]; then DEST_ROOT="$NAV_PATH"; BREAK_DEST=true; break; fi
             if [[ "${inp^^}" == "MK" ]]; then read -p "New Folder Name: " new_f; mkdir -p "$NAV_PATH/$new_f"; continue; fi
             if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -lt "$count" ]; then
-                mapfile -t only_folders < <(\ls -1 -d --group-directories-first "$NAV_PATH"/*/ 2>/dev/null)
-                idx=$((inp-1)); sel=$(basename "${only_folders[$idx]}"); target="${NAV_PATH%/}/$sel"
-                if [ -d "$target" ]; then NAV_PATH="$target"; fi
+                idx=$((inp-1)); sel="${contents[$idx]}"; target="${NAV_PATH%/}/$sel"
+                if [ -d "$target" ]; then NAV_PATH="$target"; else echo -e "${BOLD_RED}Cannot enter file. Target is directory: $NAV_PATH${NC}"; sleep 1; fi
             fi
         done
         if [ "$BREAK_DEST" = true ]; then return 0; fi
