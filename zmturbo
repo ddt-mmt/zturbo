@@ -1,0 +1,218 @@
+#!/bin/bash
+# ========================================================
+#    ZMTURBO V1.1 (DEV - OPTIMIZED)
+#    - Feature: Zombie Slayer (PGID Kill)
+#    - Feature: Resource Usage (CPU/RAM per job)
+#    - OPTIMIZED: Smart IO Throttling (du runs every 10s)
+# ========================================================
+
+DASHBOARD_DIR="/tmp/zturbo_dashboard"
+REPORT_DIR="/tmp/zturbo_reports"
+mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
+
+# CONFIG: REFRESH RATE (Detik)
+REFRESH_RATE=2
+
+if [ -n "$SUDO_USER" ]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
+
+G='\033[1;32m'; Y='\033[1;33m'; R='\033[1;31m'; C='\033[1;36m'; W='\033[1;37m'; NC='\033[0m'; GREY='\033[0;90m'
+trap 'echo -e "\n${R}Exiting Monitor...${NC}"; exit 0' SIGINT
+
+draw_bar() {
+    local p=$1; local w=15; local f=$((p * w / 100))
+    local bar=$(printf "%0.s#" $(seq 1 $f 2>/dev/null)); local emp=$(printf "%0.s." $(seq 1 $((w - f)) 2>/dev/null))
+    echo -ne "[${G}${bar}${NC}${emp}]"
+}
+fmt_size() {
+    if [ "$1" -ge 1073741824 ]; then echo "$(awk -v v=$1 'BEGIN{printf "%.1fG", v/1073741824}')"
+    elif [ "$1" -ge 1048576 ]; then echo "$(awk -v v=$1 'BEGIN{printf "%.1fM", v/1048576}')"
+    else echo "${1}B"; fi
+}
+show_footer() {
+    echo -e "\n${C}--------------------------------------------------------------------------${NC}"
+    echo -e "$1"
+    echo -e "${C}--------------------------------------------------------------------------${NC}"
+    echo -n " 👉 INPUT > "
+}
+
+LOOP_IDX=0
+while true; do
+    clear
+    MY_IP=$(hostname -I | awk '{print $1}')
+    
+    # SYSTEM HEALTH CHECK
+    LOAD=$(uptime | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs)
+    MEM_TOT=$(free -m | grep Mem | awk '{print $2}')
+    MEM_USED=$(free -m | grep Mem | awk '{print $3}')
+    MEM_PERC=$((MEM_USED * 100 / MEM_TOT))
+    
+    # CALCULATE CAPACITY (SYCHRONIZED WITH ZTURBO LOGIC)
+    MEM_GUARD=$(( MEM_TOT * 20 / 100 ))
+    MEM_SAFE=$(( MEM_TOT * 80 / 100 ))
+    MAX_THREADS_SAFE=$(( MEM_SAFE / 60 ))
+    [ $MAX_THREADS_SAFE -lt 2 ] && MAX_THREADS_SAFE=2
+
+    if [ $MEM_PERC -gt 80 ]; then MEM_COL=$R; elif [ $MEM_PERC -gt 50 ]; then MEM_COL=$Y; else MEM_COL=$G; fi
+
+    echo -e "${C}=== ZMTURBO V1.1 (DEV): MONITORING CENTER ===${NC}"
+    echo -e "HOST: ${W}$(hostname)${NC} | IP: ${Y}$MY_IP${NC} | LOGIN: ${Y}$REAL_USER${NC}"
+    echo -e "HEALTH: CPU Load: ${W}$LOAD${NC} | RAM: ${MEM_COL}${MEM_USED}MB / ${MEM_TOT}MB ($MEM_PERC%)${NC}"
+    echo -e "CAPACITY: ${G}Max Threads: $MAX_THREADS_SAFE${NC} (Safe Pool) | ${Y}OS Guard: ${MEM_GUARD}MB${NC} (Reserved)"
+    
+    # [A] ACTIVE TRANSFERS
+    echo -e "\n${Y}[ A. ACTIVE TRANSFERS ]${NC}"
+    printf "%-7s %-8s %-6s %-8s %-16s %-8s %s\n" "PID" "USER" "CPU%" "RAM(MB)" "PROGRESS" "SIZE" "DESTINATION"
+    echo "--------------------------------------------------------------------------"
+    count=0
+    
+    # OPTIMIZATION: Throttling DU Logic (Every 5 loops = 10s)
+    RUN_DU=false
+    if [ $((LOOP_IDX % 5)) -eq 0 ]; then RUN_DU=true; fi
+
+    for f in $DASHBOARD_DIR/*.info; do
+        if [ -f "$f" ]; then
+            IFS='|' read -r pid owner mode src dest total start_ts < "$f"
+            if ps -p $pid > /dev/null; then
+                # RESOURCE CALCULATION (AGGREGATE TREE)
+                # We sum up usage of the Main PID + All Children (rsync instances)
+                # Using PGID (Process Group ID) to catch them all.
+                
+                pgid=$(ps -o pgid= -p $pid 2>/dev/null | xargs)
+                if [ -n "$pgid" ]; then
+                    # Sum CPU & MEM for the whole group
+                    # cpu_sum: Total CPU% (can be > 100% on multi-core)
+                    # mem_sum: Total RSS Memory in KB
+                    stats=$(ps --no-headers -g $pgid -o %cpu,rss 2>/dev/null | awk '{cpu+=$1; mem+=$2} END {print cpu, mem}')
+                    cpu_usage=$(echo "$stats" | awk '{printf "%.1f", $1}')
+                    mem_kb=$(echo "$stats" | awk '{print $2}')
+                    
+                    # Convert MEM KB to MB for display
+                    mem_usage_mb=$(( mem_kb / 1024 ))
+                    mem_display="${mem_usage_mb}MB"
+                else
+                    cpu_usage="0.0"
+                    mem_display="0MB"
+                fi
+
+                CACHE_FILE="/tmp/zmturbo_cache_$pid"
+
+                if [ "$total" == "CALC" ]; then PERC_TXT="Calc"; BAR=$(draw_bar 0); CURR_FMT="?"; else
+                    # OPTIMIZED DISK CHECK
+                    curr=0
+                    if [ "$RUN_DU" = true ]; then
+                         curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
+                         [ -n "$curr" ] && echo "$curr" > "$CACHE_FILE"
+                    else
+                         if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
+                    fi
+                    [ -z "$curr" ] && curr=0
+
+                    if [ "$total" -gt 0 ]; then perc=$((curr * 100 / total)); else perc=0; fi
+                    [ $perc -gt 100 ] && perc=100
+                    PERC_TXT="${perc}%"; BAR=$(draw_bar $perc); CURR_FMT=$(fmt_size $curr)
+                fi
+                d_name=$(basename "$dest"); if [ "$owner" == "$REAL_USER" ]; then CL=$G; else CL=$W; fi
+                
+                printf "${CL}%-7s %-8s %-6s %-8s %-16s %-8s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$mem_display" "$BAR $PERC_TXT" "$CURR_FMT" ".../$d_name"
+                ((count++))
+            else 
+                 rm -f "$f" 2>/dev/null
+                 rm -f "/tmp/zmturbo_cache_$pid" 2>/dev/null
+            fi
+        fi
+    done
+    if [ $count -eq 0 ]; then echo -e " ${R}(No active transfers)${NC}"; fi
+
+    # [B] STORAGE STATUS
+    echo -e "\n${Y}[ B. STORAGE STATUS ]${NC}"
+    echo "--------------------------------------------------------------------------"
+    printf "% -20s % -9s % -9s %s\n" "MOUNT" "SIZE" "FREE" "SOURCE"
+    df -h | grep -E "gpfs|/mnt|/media" | head -n 5 | while read line; do
+        mnt=$(echo "$line" | awk '{print $6}'); sz=$(echo "$line" | awk '{print $2}'); fr=$(echo "$line" | awk '{print $4}'); src=$(echo "$line" | awk '{print $1}')
+        printf "% -20s % -9s % -9s ${GREY}%s${NC}\n" "$mnt" "$sz" "$fr" "$src"
+    done
+    
+    show_footer "[R] REFRESH | [K] KILL MENU | [H] HISTORY TABLE | [Q] QUIT"
+    read -t $REFRESH_RATE -n 1 -s key
+    ((LOOP_IDX++))
+
+    if [[ "${key^^}" == "Q" ]]; then exit 0; fi
+    
+    # --- HISTORY MENU ---
+    if [[ "${key^^}" == "H" ]]; then
+        while true; do
+            clear
+            echo -e "${G}>>> HISTORY REPORTS (LAST 7 DAYS) <<<${NC}"
+            echo "--------------------------------------------------------------------------------"
+            printf "% -4s % -16s % -10s % -24b %s\n" "NO" "DATE" "USER" "STATUS" "JOB ID"
+            echo "--------------------------------------------------------------------------------"
+            
+            i=1; declare -a r_files
+            for f in $(ls -t "$REPORT_DIR"/*.txt 2>/dev/null | head -n 10); do
+                fdate=$(date -r "$f" "+%m-%d %H:%M"); fname=$(basename "$f")
+                fuser_in_file=$(head -n 10 "$f" | grep "USER" | awk '{print $3}')
+                if [ -z "$fuser_in_file" ]; then fuser_in_file=$(echo "$fname" | cut -d'_' -f1); fi
+                
+                raw_status=$(grep "Final Status:" "$f" | tail -1 | cut -d':' -f2 | xargs)
+                if [[ "$raw_status" == *"SUCCESS"* ]]; then status_fmt="${G}SUCCESS${NC}"
+                elif [[ "$raw_status" == *"FAILED"* ]] || [[ "$raw_status" == *"WARNING"* ]]; then status_fmt="${R}FAILED/WARN${NC}"
+                else status_fmt="${Y}UNKNOWN${NC}"; fi
+
+                printf " [%d] % -16s % -10s % -24b %s\n" "$i" "$fdate" "$fuser_in_file" "$status_fmt" "$fname"
+                r_files[$i]="$f"; ((i++))
+            done
+            if [ $i -eq 1 ]; then echo " (No reports found)"; sleep 2; break; fi
+            
+            show_footer "[Number] View Report | [B] Back"
+            read act
+            if [[ "${act^^}" == "B" ]]; then break; fi
+            
+            if [[ "$act" =~ ^[0-9]+$ ]] && [ "$act" -ge 1 ] && [ "$act" -lt "$i" ]; then
+                selected=${r_files[$act]}
+                while true; do
+                    clear; echo -e "${C}=== REPORT SUMMARY: $(basename "$selected") ===${NC}"
+                    head -n 10 "$selected"
+                    echo -e "\n${GREY}   ... (Logs hidden) ...${NC}\n"
+                    tail -n 20 "$selected"
+                    show_footer "[F] Full Logs | [B] Back"
+                    read -n 1 sub_act
+                    if [[ "${sub_act^^}" == "B" ]]; then break; fi
+                    if [[ "${sub_act^^}" == "F" ]]; then clear; cat "$selected"; echo -e "\n${C}=== END OF LOG ===${NC}"; show_footer "[ENTER] Back"; read; fi
+                done
+            fi
+        done
+    fi
+    
+    # --- KILL MENU ---
+    if [[ "${key^^}" == "K" ]]; then
+        while true; do
+            clear; echo -e "${R}>>> KILL MANAGER (ZOMBIE SLAYER) <<<${NC}"
+            i=1; declare -a k_pids
+            for f in $DASHBOARD_DIR/*.info; do
+                [ ! -f "$f" ] && continue
+                IFS='|' read -r pid owner mode src dest total start_ts < "$f"
+                if [ "$owner" == "$REAL_USER" ] || [ "$EUID" -eq 0 ]; then
+                    echo " [$i] PID: $pid | User: $owner | Dest: $(basename "$dest")"
+                    k_pids[$i]="$pid"; ((i++))
+                fi
+            done
+            if [ $i -eq 1 ]; then echo " (No jobs available)"; sleep 2; break; fi
+            
+            show_footer "[Number] Stop Job | [B] Back"
+            read act
+            if [[ "${act^^}" == "B" ]]; then break; fi
+            
+            if [[ "$act" =~ ^[0-9]+$ ]] && [ "$act" -ge 1 ] && [ "$act" -lt "$i" ]; then
+                t_pid=${k_pids[$act]}
+                echo -e "\n${BOLD_RED}WARNING: Terminating Process Group $t_pid.${NC}"
+                read -p "Confirm Kill? (y/n): " confirm
+                if [[ "${confirm^^}" == "Y" ]]; then
+                    PGID=$(ps -o pgid= -p $t_pid 2>/dev/null | grep -o '[0-9]*')
+                    if [ -n "$PGID" ]; then kill -TERM -- -"$PGID" 2>/dev/null; sleep 0.5; kill -KILL -- -"$PGID" 2>/dev/null; else pkill -P $t_pid; kill $t_pid; fi
+                    rm -f "$DASHBOARD_DIR/"*"${t_pid}.info"
+                    sleep 1
+                fi
+            fi
+        done
+    fi
+done
