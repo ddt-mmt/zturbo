@@ -444,6 +444,7 @@ echo ">> Calculating Source Metadata (Background)..."
     echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
 ) &
 PID_CALC=$!
+echo ">> DEBUG: Background Calc Started (PID: $PID_CALC)"
 
 if [ "$CURRENT_MODE" == "SAFE" ]; then 
     PREFIX="nice -n 10 ionice -c 2 -n 7"
@@ -452,9 +453,11 @@ else
 fi
 
 # Start Dynamic Governor (Adaptive Priority)
+echo ">> DEBUG: Starting Governor..."
 dynamic_governor &
 GOV_PID=$!
 
+echo ">> DEBUG: Entering Transfer Logic..."
 if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
     if [ "$CURRENT_MODE" == "SAFE" ]; then
         echo ">> Multi-select detected. Using RSYNC (Safe Mode) for batch integrity."
