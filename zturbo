@@ -444,7 +444,6 @@ echo ">> Calculating Source Metadata (Background)..."
     echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
 ) &
 PID_CALC=$!
-echo ">> DEBUG: Background Calc Started (PID: $PID_CALC)"
 
 if [ "$CURRENT_MODE" == "SAFE" ]; then 
     PREFIX="nice -n 10 ionice -c 2 -n 7"
@@ -453,15 +452,13 @@ else
 fi
 
 # Start Dynamic Governor (Adaptive Priority)
-echo ">> DEBUG: Starting Governor..."
 dynamic_governor &
 GOV_PID=$!
 
-echo ">> DEBUG: Entering Transfer Logic..."
 if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
     if [ "$CURRENT_MODE" == "SAFE" ]; then
         echo ">> Multi-select detected. Using RSYNC (Safe Mode) for batch integrity."
-        $PREFIX rsync -av --progress "${SELECTED_PATHS[@]}" "$DEST" >> "$REPORT_TXT" 2>&1
+        $PREFIX rsync -av --progress "${SELECTED_PATHS[@]}" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
         EXIT_CODE=$?
     else
         echo ">> Multi-select detected. Running Parallel Engine (TURBO) for each item..."
@@ -471,10 +468,10 @@ if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
             if [ -d "$s" ]; then
                 $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
                 -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
-                "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                "$s" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
                 RET=$?
             else
-                $PREFIX rsync -av --progress "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                $PREFIX rsync -av --progress "$s" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
                 RET=$?
             fi
             [ $RET -ne 0 ] && EXIT_CODE=1
@@ -482,16 +479,16 @@ if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
     fi
 else
     if [ "$CURRENT_MODE" == "SAFE" ]; then 
-        $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+        $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
         EXIT_CODE=$?
     else 
         if [ -d "${SELECTED_PATHS[0]}" ]; then
             $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
             -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
-            "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+            "${SELECTED_PATHS[0]}" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
             EXIT_CODE=$?
         else
-             $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+             $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" 2>&1 | tee -a "$REPORT_TXT"
              EXIT_CODE=$?
         fi
     fi
