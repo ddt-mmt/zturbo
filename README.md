@@ -50,10 +50,18 @@ sudo apt install rsync fpart
     cd zturbo
     ```
 
-2.  **Berikan Izin Eksekusi**
+2.  **Jalankan Installer** (Otomatis install dependency & setup path)
     ```bash
-    chmod +x zturbo zmturbo
+    chmod +x install.sh
+    sudo ./install.sh
     ```
+    
+    *Script ini akan memindahkan `zturbo` dan `zmturbo` ke `/usr/local/bin/` sehingga bisa dipanggil dari folder mana saja.*
+
+3.  **Selesai!**
+    Langsung ketik perintah berikut dari terminal mana pun:
+    *   `zturbo` : Untuk memulai transfer.
+    *   `zmturbo` : Untuk monitoring.
 
 ---
 
@@ -61,10 +69,10 @@ sudo apt install rsync fpart
 
 ### 1. Menjalankan Transfer (ZTURBO)
 
-Jalankan script `zturbo` untuk memulai wizard transfer data.
+Jalankan perintah `zturbo` untuk memulai wizard transfer data.
 
 ```bash
-./zturbo
+zturbo
 ```
 
 **Tampilan Antarmuka:**
@@ -98,10 +106,10 @@ Jalankan script `zturbo` untuk memulai wizard transfer data.
 
 ### 2. Monitoring (ZMTURBO)
 
-Jalankan script `zmturbo` di terminal terpisah untuk memantau proses yang berjalan.
+Jalankan perintah `zmturbo` di terminal terpisah untuk memantau proses yang berjalan.
 
 ```bash
-./zmturbo
+zmturbo
 ```
 
 **Tampilan Dashboard:**

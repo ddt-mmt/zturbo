@@ -51,12 +51,21 @@ fmt_size() {
     elif [ "$1" -ge 1048576 ]; then echo "$(awk -v v=$1 'BEGIN{printf "%.1fM", v/1048576}')"
     else echo "${1}B"; fi
 }
+fmt_time() {
+    local T=$1
+    if [ $T -gt 86400 ]; then printf ">24h"
+    elif [ $T -gt 3600 ]; then printf "%dh%02dm" $((T/3600)) $(( (T%3600)/60 ))
+    else printf "%02dm%02ds" $(( (T%3600)/60 )) $((T%60)); fi
+}
 show_footer() {
     echo -e "\n${C}--------------------------------------------------------------------------${NC}"
     echo -e "$1"
     echo -e "${C}--------------------------------------------------------------------------${NC}"
     echo -n " 👉 INPUT > "
 }
+
+declare -A PREV_SIZE
+declare -A PREV_TIME
 
 LOOP_IDX=0
 while true; do
@@ -84,51 +93,67 @@ while true; do
     
     # [A] ACTIVE TRANSFERS
     echo -e "\n${Y}[ A. ACTIVE TRANSFERS ]${NC}"
-    printf "%-7s %-8s %-6s %-8s %-16s %-8s %s\n" "PID" "USER" "CPU%" "RAM(MB)" "PROGRESS" "SIZE" "DESTINATION"
+    printf "%-7s %-8s %-6s %-12s %-12s %-16s %s\n" "PID" "USER" "CPU%" "SPEED" "ETA" "PROGRESS" "DESTINATION"
     echo "--------------------------------------------------------------------------"
     count=0
     
     # OPTIMIZATION: Throttling DU Logic (Every 5 loops = 10s)
     RUN_DU=false
     if [ $((LOOP_IDX % 5)) -eq 0 ]; then RUN_DU=true; fi
+    NOW_TS=$(date +%s)
 
     for f in $DASHBOARD_DIR/*.info; do
         if [ -f "$f" ]; then
             IFS='|' read -r pid owner mode src dest total start_ts < "$f"
             if ps -p $pid > /dev/null; then
                 # RESOURCE CALCULATION (AGGREGATE TREE)
-                # We sum up usage of the Main PID + All Children (rsync instances)
-                # Using PGID (Process Group ID) to catch them all.
-                
                 pgid=$(ps -o pgid= -p $pid 2>/dev/null | xargs)
                 if [ -n "$pgid" ]; then
-                    # Sum CPU & MEM for the whole group
-                    # cpu_sum: Total CPU% (can be > 100% on multi-core)
-                    # mem_sum: Total RSS Memory in KB
-                    stats=$(ps --no-headers -g $pgid -o %cpu,rss 2>/dev/null | awk '{cpu+=$1; mem+=$2} END {print cpu, mem}')
+                    stats=$(ps --no-headers -g $pgid -o %cpu 2>/dev/null | awk '{cpu+=$1} END {print cpu}')
                     cpu_usage=$(echo "$stats" | awk '{printf "%.1f", $1}')
-                    mem_kb=$(echo "$stats" | awk '{print $2}')
-                    
-                    # Convert MEM KB to MB for display
-                    mem_usage_mb=$(( mem_kb / 1024 ))
-                    mem_display="${mem_usage_mb}MB"
                 else
                     cpu_usage="0.0"
-                    mem_display="0MB"
                 fi
 
                 CACHE_FILE="/tmp/zmturbo_cache_$pid"
 
-                if [ "$total" == "CALC" ]; then PERC_TXT="Calc"; BAR=$(draw_bar 0); CURR_FMT="?"; else
+                if [ "$total" == "CALC" ]; then 
+                    PERC_TXT="Calc"; BAR=$(draw_bar 0); CURR_FMT="?"; SPEED_TXT="-"; ETA_TXT="-"
+                else
                     # OPTIMIZED DISK CHECK
                     curr=0
                     if [ "$RUN_DU" = true ]; then
                          curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
                          [ -n "$curr" ] && echo "$curr" > "$CACHE_FILE"
+                         
+                         # SPEED & ETA CALCULATION
+                         if [ -n "${PREV_SIZE[$pid]}" ]; then
+                             delta_bytes=$(( curr - ${PREV_SIZE[$pid]} ))
+                             delta_time=$(( NOW_TS - ${PREV_TIME[$pid]} ))
+                             if [ $delta_time -gt 0 ] && [ $delta_bytes -ge 0 ]; then
+                                 spd=$(( delta_bytes / delta_time ))
+                                 if [ $spd -gt 0 ]; then
+                                     rem_bytes=$(( total - curr ))
+                                     eta_sec=$(( rem_bytes / spd ))
+                                     ETA_TXT=$(fmt_time $eta_sec)
+                                     SPEED_TXT="$(fmt_size $spd)/s"
+                                 else
+                                     SPEED_TXT="0B/s"; ETA_TXT="Stalled"
+                                 fi
+                             fi
+                         fi
+                         PREV_SIZE[$pid]=$curr
+                         PREV_TIME[$pid]=$NOW_TS
+                         
+                         # Cache Speed/ETA
+                         echo "$SPEED_TXT|$ETA_TXT" > "${CACHE_FILE}_meta"
                     else
                          if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
+                         if [ -f "${CACHE_FILE}_meta" ]; then IFS='|' read -r SPEED_TXT ETA_TXT < "${CACHE_FILE}_meta"; fi
                     fi
                     [ -z "$curr" ] && curr=0
+                    [ -z "$SPEED_TXT" ] && SPEED_TXT="-"
+                    [ -z "$ETA_TXT" ] && ETA_TXT="-"
 
                     if [ "$total" -gt 0 ]; then perc=$((curr * 100 / total)); else perc=0; fi
                     [ $perc -gt 100 ] && perc=100
@@ -136,11 +161,12 @@ while true; do
                 fi
                 d_name=$(basename "$dest"); if [ "$owner" == "$REAL_USER" ]; then CL=$G; else CL=$W; fi
                 
-                printf "${CL}%-7s %-8s %-6s %-8s %-16s %-8s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$mem_display" "$BAR $PERC_TXT" "$CURR_FMT" ".../$d_name"
+                printf "${CL}%-7s %-8s %-6s %-12s %-12s %-16s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT" ".../$d_name"
                 ((count++))
             else 
                  rm -f "$f" 2>/dev/null
-                 rm -f "/tmp/zmturbo_cache_$pid" 2>/dev/null
+                 rm -f "/tmp/zmturbo_cache_$pid" "${CACHE_FILE}_meta" 2>/dev/null
+                 unset PREV_SIZE[$pid] PREV_TIME[$pid]
             fi
         fi
     done
@@ -155,7 +181,7 @@ while true; do
         printf "% -20s % -9s % -9s ${GREY}%s${NC}\n" "$mnt" "$sz" "$fr" "$src"
     done
     
-    show_footer "[R] REFRESH | [K] KILL MENU | [H] HISTORY TABLE | [Q] QUIT"
+    show_footer "[R] Refresh | [K] Kill Menu | [H] History | [Q] Quit"
     read -t $REFRESH_RATE -n 1 -s key
     ((LOOP_IDX++))
 
@@ -186,7 +212,7 @@ while true; do
             done
             if [ $i -eq 1 ]; then echo " (No reports found)"; sleep 2; break; fi
             
-            show_footer "[Number] View Report | [B] Back"
+            show_footer "[#] View Report | [B] Back"
             read act
             if [[ "${act^^}" == "B" ]]; then break; fi
             
@@ -221,7 +247,7 @@ while true; do
             done
             if [ $i -eq 1 ]; then echo " (No jobs available)"; sleep 2; break; fi
             
-            show_footer "[Number] Stop Job | [B] Back"
+            show_footer "[#] Stop Job | [B] Back"
             read act
             if [[ "${act^^}" == "B" ]]; then break; fi
             

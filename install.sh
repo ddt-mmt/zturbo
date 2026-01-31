@@ -2,7 +2,15 @@
 # ZTURBO Installer
 # Author: Didit
 
-if [ "$EUID" -ne 0 ]; then echo "❌ Run as root"; exit 1; fi
+if [ "$EUID" -ne 0 ]; then echo "❌ Run as root (sudo ./install.sh)"; exit 1; fi
+
+# Ensure we are in the directory containing the script and binaries
+cd "$(dirname "$0")"
+
+if [ ! -f "zturbo" ] || [ ! -f "zmturbo" ]; then
+    echo "❌ Error: zturbo or zmturbo files not found in the current directory."
+    exit 1
+fi
 
 echo ">> Installing dependencies..."
 if command -v apt-get &> /dev/null; then
@@ -17,4 +25,6 @@ cp zturbo /usr/local/bin/
 cp zmturbo /usr/local/bin/
 chmod +x /usr/local/bin/zturbo /usr/local/bin/zmturbo
 
-echo "✅ ZTURBO Installed! Run 'zturbo' to start."
+echo "✅ ZTURBO Installed to /usr/local/bin/!"
+echo "   Run 'zturbo' anywhere to start the engine."
+echo "   Run 'zmturbo' anywhere to start monitoring."
