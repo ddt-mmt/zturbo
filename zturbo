@@ -445,7 +445,14 @@ echo ">> Calculating Source Metadata (Background)..."
 ) &
 PID_CALC=$!
 
-if [ "$CURRENT_MODE" == "SAFE" ]; then PREFIX="nice -n 10 ionice -c 2 -n 7"; else PREFIX=""; fi
+if [ "$CURRENT_MODE" == "SAFE" ]; then 
+    PREFIX="nice -n 10 ionice -c 2 -n 7"
+    SSH_OPT=""
+else 
+    PREFIX=""
+    # OPTIMIZATION: Use lightweight cipher for high-speed routing (Inter-VLAN)
+    SSH_OPT="-e \"ssh -T -c aes128-gcm -o Compression=no -x\""
+fi
 
 # Start Dynamic Governor (Adaptive Priority)
 dynamic_governor &
@@ -461,19 +468,15 @@ if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
         EXIT_CODE=0
         for s in "${SELECTED_PATHS[@]}"; do
             echo ">> Processing: $(basename "$s")" | tee -a "$REPORT_TXT"
-            
-            # HYBRID LOGIC: Use fpsync for folders, rsync for single files
             if [ -d "$s" ]; then
                 $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
-                -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
+                -o "$SSH_OPT -lptgoD --numeric-ids --no-compress --info=progress2" \
                 "$s" "$DEST" >> "$REPORT_TXT" 2>&1
                 RET=$?
             else
-                # Single file -> Use RSYNC (Faster/Safer for single blob)
-                $PREFIX rsync -av --progress "$s" "$DEST" >> "$REPORT_TXT" 2>&1
+                $PREFIX rsync -av --progress $SSH_OPT "$s" "$DEST" >> "$REPORT_TXT" 2>&1
                 RET=$?
             fi
-            
             [ $RET -ne 0 ] && EXIT_CODE=1
         done
     fi
@@ -482,15 +485,13 @@ else
         $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
         EXIT_CODE=$?
     else 
-        # SINGLE ITEM TURBO CHECK
         if [ -d "${SELECTED_PATHS[0]}" ]; then
             $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
-            -o "-lptgoD --numeric-ids --no-compress --info=progress2" \
+            -o "$SSH_OPT -lptgoD --numeric-ids --no-compress --info=progress2" \
             "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
             EXIT_CODE=$?
         else
-             # Single file in Turbo mode -> Fallback to rsync
-             $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+             $PREFIX rsync -av --progress $SSH_OPT "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
              EXIT_CODE=$?
         fi
     fi
@@ -504,7 +505,6 @@ if [ -f "/tmp/zturbo_size_$$" ]; then
     SRC_BYTES=$(cat "/tmp/zturbo_size_$$")
     rm -f "/tmp/zturbo_size_$$"
 else
-    # Fallback if file missing (should not happen)
     SRC_BYTES=0
 fi
 
@@ -514,14 +514,16 @@ echo -e "\n${BOLD_YELLOW}🔎 VERIFYING DATA INTEGRITY (PARALLEL CHECK)...${NC}"
 calc_source() {
     T_BYTES=0; T_FILES=0
     for s in "${SELECTED_PATHS[@]}"; do
-        b=$(du -sb "$s" 2>/dev/null | cut -f1); f=$(find "$s" -type f | wc -l)
+        b=$(du -sb "$s" 2>/dev/null | cut -f1)
+        if [ -f "$s" ]; then f=1; else f=$(find "$s" -type f | wc -l); fi
         T_BYTES=$((T_BYTES + b)); T_FILES=$((T_FILES + f))
     done
     echo "$T_BYTES $T_FILES" > /tmp/dt_src_$$
 }
 
 calc_dest() {
-    b=$(du -sb "$1" 2>/dev/null | cut -f1); f=$(find "$1" -type f | wc -l)
+    b=$(du -sb "$1" 2>/dev/null | cut -f1)
+    if [ -f "$1" ]; then f=1; else f=$(find "$1" -type f | wc -l); fi
     echo "$b $f" > /tmp/dt_dest_$$
 }
 
