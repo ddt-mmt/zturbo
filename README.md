@@ -1,89 +1,167 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1%20(Dev)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 ![Maintenance](https://img.shields.io/badge/maintenance-Active-success.svg?style=flat-square)
 
-**ZTURBO** adalah *Command Line Interface (CLI)* canggih yang membungkus kekuatan `rsync` dan `fpsync` untuk keperluan transfer data skala besar (Big Data) antar server. Dilengkapi dengan manajemen proses anti-zombie dan dashboard monitoring real-time.
+**ZTURBO** adalah toolkit *Command Line Interface (CLI)* canggih yang dirancang untuk mempercepat dan mempermudah proses migrasi data skala besar (Big Data) antar server atau direktori. Toolkit ini menggabungkan kekuatan `rsync` dan `fpsync` dengan antarmuka yang ramah pengguna serta sistem monitoring yang tangguh.
 
 ---
 
 ## 🔥 Fitur Unggulan
 
-| Fitur | Deskripsi |
-| :--- | :--- |
-| **⚡ Hybrid Engine** | Otomatis memilih antara `rsync` (Safe Mode) atau `fpsync` (Turbo Mode). |
-| **🛒 Multi-Select** | Pilih file & folder sesuka hati dengan sistem *checklist* sebelum dikirim. |
-| **🧟 Zombie Slayer** | Fitur keamanan yang mematikan proses macet hingga ke akarnya (PGID). |
-| **🛡️ Integrity Check** | Verifikasi otomatis di akhir transfer (Byte & File count audit). |
-| **📊 Smart Monitor** | Dashboard visual untuk memantau CPU, RAM, dan Progress Bar. |
+### 1. ZTURBO (The Engine)
+*   **⚡ Hybrid Architecture**: Secara cerdas menangani transfer file kecil maupun besar.
+*   **🛒 Multi-Select Interface**: Memungkinkan pengguna memilih beberapa file atau folder sekaligus dari sumber yang berbeda sebelum memulai transfer.
+*   **🛡️ Parallel Verification**: Melakukan verifikasi data (Source vs Destination) secara paralel untuk memastikan integritas data tanpa mengorbankan waktu.
+*   **📝 Automated Reporting**: Menghasilkan laporan detail (TXT) untuk setiap pekerjaan transfer, tersimpan rapi di `/tmp/zturbo_reports`.
+*   **🛑 Safety First**: Dilengkapi dengan mekanisme "Safe Mode" dan penanganan sinyal (Ctrl+C) yang membersihkan file sementara secara otomatis.
+
+### 2. ZMTURBO (The Monitor)
+*   **📊 Real-time Dashboard**: Memantau penggunaan CPU, RAM, dan Load Average server secara langsung.
+*   **🧟 Zombie Slayer**: Fitur keamanan tingkat lanjut yang mampu mendeteksi dan mematikan proses "zombie" atau proses yang macet hingga ke akarnya (menggunakan Process Group ID).
+*   **📉 Smart Resource Calculation**: Menghitung kapasitas aman server (Safe Pool) berdasarkan RAM yang tersedia untuk mencegah *server crash* akibat overload.
+*   **👁️ Granular Visibility**: Melihat detail setiap job transfer: PID, User, CPU Usage per job, RAM Usage, dan Progress Bar visual.
 
 ---
 
-## 📸 Tampilan (Preview)
+## ⚙️ Prasyarat Sistem (Requirements)
 
-### 1. Menu Transfer (ZTURBO)
-Antarmuka interaktif untuk memilih source dan destination.
+Sebelum menggunakan ZTURBO, pastikan server Anda memiliki paket berikut:
 
-```text
-┌──────────────────────────────────────────┐
-│      ZTURBO - DATA TRANSFER ENGINE       │
-└──────────────────────────────────────────┘
- [ BROWSE SOURCE ] /mnt/data/Project_Alpha
- ✅ Selected Items: 2
-
- [ ] [1] 📁 2023_Backup/
- [*] [2] 📁 2024_Backup/      <-- [TERPILIH]
- [ ] [3] 📁 Images/
- [*] [4] 📄 config.yaml       <-- [TERPILIH]
-
- 👉 INPUT > d (Done)
-```
-
-### 2. Dashboard Monitor (ZMTURBO)
-Pantau performa transfer secara real-time.
-
-```text
-┌──────────────────────────────────────────┐
-│   ZMTURBO V1.1: MONITORING CENTER        │
-└──────────────────────────────────────────┘
- HOST: Server-JKT | IP: 10.X.X.X
- HEALTH: CPU Load: 2.45 | RAM: 18%
-
- [ A. ACTIVE TRANSFERS ]
- PID     USER    CPU%   PROGRESS           DESTINATION
- -------------------------------------------------------
- 45120   didit   85%    [#######.......]   .../2024_Backup
- 45199   root    12%    [#############.]   .../SysLog
-```
-
----
-
-## 📦 Instalasi Cepat
-Salin dan jalankan perintah berikut di terminal server Anda:
-
-```bash
-# 1. Clone Repository
-git clone https://github.com/ddt-mmt/zturbo.git
-cd zturbo
-
-# 2. Jalankan Installer (Otomatis)
-chmod +x install.sh
-sudo ./install.sh
-```
-
-## 🚀 Cara Penggunaan
-**Memulai Transfer**
-```bash
-sudo zturbo
-```
-
-**Membuka Monitoring**
-```bash
-sudo zmturbo
-```
-
-## ⚙️ Requirements
 *   **OS**: Linux (Ubuntu, Debian, CentOS, RHEL).
-*   **Core**: `rsync` (Wajib), `fpart` (Wajib untuk Turbo Mode).
+*   **Core Utils**: `rsync`, `awk`, `grep`, `ps`, `free`.
+*   **Optional (untuk Turbo Mode)**: `fpart`, `fpsync`.
+
+Untuk menginstal dependensi pada Ubuntu/Debian:
+```bash
+sudo apt update
+sudo apt install rsync fpart
+```
+
+---
+
+## 📦 Instalasi
+
+1.  **Clone Repository**
+    ```bash
+    git clone https://github.com/ddt-mmt/zturbo.git
+    cd zturbo
+    ```
+
+2.  **Berikan Izin Eksekusi**
+    ```bash
+    chmod +x zturbo zmturbo
+    ```
+
+---
+
+## 🚀 Panduan Penggunaan
+
+### 1. Menjalankan Transfer (ZTURBO)
+
+Jalankan script `zturbo` untuk memulai wizard transfer data.
+
+```bash
+./zturbo
+```
+
+**Tampilan Antarmuka:**
+
+```text
+==========================================
+       ZTURBO - DEV OPTIMIZED ENGINE      
+==========================================
+👤 USER: root | 🌐 IP: 192.168.1.10 | 💾 MODE: SAFE
+------------------------------------------
+[ STEP 1 ] SELECT SOURCE LOCATION
+ [0] 🏠 HOME DIR (/root)
+ [1] 🌳 ROOT DIR (/root)
+ [2] 📂 /mnt/data
+     └─ 🔗 Source: /dev/sdb1
+
+------------------------------------------
+[Number] Select | [R] Refresh | [Q] Quit
+------------------------------------------
+ 👉 INPUT > 
+```
+
+**Langkah-langkah:**
+1.  **Pilih Lokasi Awal**: Pilih drive atau folder induk.
+2.  **Browse & Select**: Navigasi folder dan gunakan tombol `[Space]` atau masukkan nomor untuk memilih (checklist) folder/file yang ingin dikirim.
+3.  **Finalisasi**: Ketik `d` (Done) saat selesai memilih.
+4.  **Pilih Tujuan**: Tentukan folder tujuan transfer.
+5.  **Konfirmasi**: Review ringkasan dan mulai transfer.
+
+---
+
+### 2. Monitoring (ZMTURBO)
+
+Jalankan script `zmturbo` di terminal terpisah untuk memantau proses yang berjalan.
+
+```bash
+./zmturbo
+```
+
+**Tampilan Dashboard:**
+
+```text
+=== ZMTURBO V1.1 (DEV): MONITORING CENTER ===
+HOST: vm-kali-02 | IP: 192.168.1.10 | LOGIN: root
+HEALTH: CPU Load: 0.45 | RAM: 1540MB / 8000MB (19%)
+CAPACITY: Max Threads: 106 (Safe Pool) | OS Guard: 1600MB (Reserved)
+
+[ A. ACTIVE TRANSFERS ]
+PID     USER    CPU%   RAM(MB)  PROGRESS           SIZE     DESTINATION
+--------------------------------------------------------------------------
+1823    root    12.5   45MB     [####..........]   1.2G     /mnt/backup/2024
+1890    admin   5.0    20MB     [#######.......]   500M     /var/www/html
+
+--------------------------------------------------------------------------
+[K] Kill Process | [Q] Quit Monitor
+--------------------------------------------------------------------------
+ 👉 INPUT > 
+```
+
+**Fitur Kontrol:**
+*   **[K] Kill Process**: Memasukkan menu untuk menghentikan paksa transfer tertentu (misal: jika macet atau salah kirim). Sistem akan mematikan seluruh *process group* terkait untuk mencegah proses zombie.
+*   **[Q] Quit**: Keluar dari dashboard monitoring.
+
+---
+
+## 🔧 Konfigurasi Lanjutan
+
+Anda dapat mengubah variabel konfigurasi di bagian atas script `zturbo` dan `zmturbo` sesuai kebutuhan server Anda:
+
+**File `zturbo`:**
+```bash
+FILES_PER_JOB=2500        # Jumlah file per batch (untuk fpart/rsync)
+CURRENT_MODE="SAFE"       # Mode default
+```
+
+**File `zmturbo`:**
+```bash
+REFRESH_RATE=2            # Interval refresh dashboard (detik)
+```
+
+---
+
+## 📂 Lokasi Log & Report
+
+*   **Dashboard Cache**: `/tmp/zturbo_dashboard/`
+*   **Laporan Transfer**: `/tmp/zturbo_reports/`
+
+Untuk membersihkan log lama, sistem secara otomatis menghapus laporan yang berusia lebih dari 7 hari saat `zturbo` dijalankan.
+
+---
+
+## 🤝 Kontribusi
+
+Pull Request sangat diterima. Untuk perubahan besar, harap buka issue terlebih dahulu untuk mendiskusikan apa yang ingin Anda ubah.
+
+1.  Fork project ini
+2.  Buat feature branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit perubahan Anda (`git commit -m 'Add some AmazingFeature'`)
+4.  Push ke branch (`git push origin feature/AmazingFeature`)
+5.  Buka Pull Request
