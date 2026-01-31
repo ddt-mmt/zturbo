@@ -337,42 +337,8 @@ calc_optimal_threads() {
     echo "$target_threads"
 }
 
-SESSION_FILE="$HOME/.zturbo_last_session"
-
-save_session() {
-    cat <<EOF > "$SESSION_FILE"
-DEST_ROOT="$DEST_ROOT"
-SUB_FOLDER="$SUB_FOLDER"
-THREADS="$THREADS"
-CURRENT_MODE="$CURRENT_MODE"
-EOF
-    declare -p SELECTED_PATHS >> "$SESSION_FILE"
-}
-
 # --- MAIN LOGIC ---
 STEP=1
-# Check for previous session
-if [ -f "$SESSION_FILE" ]; then
-    print_header
-    echo -e "${BOLD_YELLOW}[ RESUME PREVIOUS SESSION ]${NC}"
-    source "$SESSION_FILE" 2>/dev/null
-    echo -e " Found saved config:"
-    echo -e "  - Dest: $DEST_ROOT"
-    echo -e "  - Folder: $SUB_FOLDER"
-    echo -e "  - Mode: $CURRENT_MODE"
-    if [ ${#SELECTED_PATHS[@]} -gt 0 ]; then
-        echo -e "  - Source: ${SELECTED_PATHS[0]} ... (${#SELECTED_PATHS[@]} items)"
-    fi
-    show_footer "Type 'Y' to Resume | [ENTER] Start New"
-    read res
-    if [[ "${res^^}" == "Y" ]]; then
-        STEP=3 # Jump to Confirmation
-    else
-        # Clear legacy vars if not resuming
-        unset DEST_ROOT SUB_FOLDER THREADS CURRENT_MODE SELECTED_PATHS
-        CURRENT_MODE="SAFE" # Reset default
-    fi
-fi
 
 while true; do
     if [ $STEP -eq 1 ]; then 
@@ -411,7 +377,7 @@ while true; do
         echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
         show_footer "Type 'OK' | [1-5] Edit | [MK] Create Folder | [B] Back"
         read k || exit 1
-        if [[ "$k" == "OK" ]]; then save_session; break; fi
+        if [[ "$k" == "OK" ]]; then break; fi
         case "${k^^}" in
             Q) exit 0 ;; B) STEP=2; continue ;; MK) read -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub" ;; 
             1) select_source ;; 2) select_dest ;; 3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 
