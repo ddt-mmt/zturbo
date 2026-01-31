@@ -1,0 +1,401 @@
+#!/bin/bash
+# ========================================================
+#    ZTURBO V1.1 (FINAL ENGINE)
+#    - Multi-Select Batch Transfer (Toggle s <num>)
+#    - Smart Navigation (Back = Up One Level)
+#    - Auto Reconciliation & Integrity Check
+# ========================================================
+
+# --- CONFIG ---
+CPU_CORES=$(nproc)
+CURRENT_MODE="SAFE" 
+FILES_PER_JOB=2500
+DASHBOARD_DIR="/tmp/zturbo_dashboard"
+REPORT_DIR="/tmp/zturbo_reports"
+
+mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
+chmod 777 "$DASHBOARD_DIR" "$REPORT_DIR" 2>/dev/null
+find "$REPORT_DIR" -type f -name "*.txt" -mtime +7 -delete 2>/dev/null
+
+if [ -n "$SUDO_USER" ]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
+
+JOB_ID="${REAL_USER}_$$"
+MONITOR_FILE="$DASHBOARD_DIR/${JOB_ID}.info"
+REPORT_TXT="$REPORT_DIR/${REAL_USER}_job$$.txt"
+JOB_COMPLETED=false
+
+# --- STYLES ---
+BOLD_GREEN='\033[1;32m'; BOLD_YELLOW='\033[1;33m'; BOLD_CYAN='\033[1;36m'
+BOLD_MAGENTA='\033[1;35m'; BOLD_WHITE='\033[1;37m'; BOLD_RED='\033[1;31m'
+NC='\033[0m'; GREY='\033[0;90m'
+
+cleanup() {
+    rm -f "$MONITOR_FILE"
+    if [ "$JOB_COMPLETED" = false ]; then
+        if [ -f "$REPORT_TXT" ]; then
+            echo -e "\nSTATUS      : CANCELLED/FAILED (Interrupted)" >> "$REPORT_TXT"
+            echo "----------------------------------------------------------------" >> "$REPORT_TXT"
+        fi
+    fi
+}
+trap cleanup EXIT INT TERM
+
+print_header() {
+    clear
+    MY_IP=$(hostname -I | awk '{print $1}')
+    echo -e "${BOLD_GREEN}==========================================${NC}"
+    echo -e "${BOLD_GREEN}       ZTURBO - DATA TRANSFER ENGINE      ${NC}"
+    echo -e "${BOLD_GREEN}==========================================${NC}"
+    echo -e "👤 USER: ${BOLD_YELLOW}$REAL_USER${NC} | 🌐 IP: ${BOLD_MAGENTA}$MY_IP${NC} | 💾 MODE: $CURRENT_MODE"
+    echo -e "------------------------------------------"
+}
+
+show_footer() {
+    echo -e "\n${BOLD_CYAN}------------------------------------------${NC}"
+    echo -e "$1"
+    echo -e "${BOLD_CYAN}------------------------------------------${NC}"
+    echo -n " 👉 INPUT > "
+}
+format_duration() { printf "%02dh:%02dm:%02ds" $(($1/3600)) $((($1%3600)/60)) $(($1%60)); }
+human_size() { numfmt --to=iec-i --suffix=B $1 2>/dev/null || echo "$1 B"; }
+
+# Array untuk menyimpan multi-select
+declare -a SELECTED_PATHS
+declare -a SELECTED_NAMES
+
+# --- 1. SOURCE MODULE (MULTI-SELECT) ---
+select_source() {
+    # Reset selection setiap kali masuk menu utama sumber
+    SELECTED_PATHS=()
+    SELECTED_NAMES=()
+
+    while true; do
+        print_header
+        echo -e "${BOLD_YELLOW}[ STEP 1 ] SELECT SOURCE LOCATION${NC}"
+        mapfile -t mounts < <(mount | grep -E "type cifs|type nfs|type gpfs|type smb|on /mnt|on /media" | awk '{print $3 "|" $1}')
+        echo -e " [0] 🏠 HOME DIR ($HOME)"
+        echo -e " [1] 🌳 ROOT DIR (/)"
+        i=2
+        for line in "${mounts[@]}"; do
+            path=$(echo "$line" | cut -d'|' -f1)
+            src=$(echo "$line" | cut -d'|' -f2)
+            echo -e " [$i] 📂 ${BOLD_MAGENTA}$path${NC}"
+            echo -e "     └─ 🔗 Source: ${GREY}$src${NC}"
+            ((i++))
+        done
+        show_footer "[Number] Select | [R] Refresh | [Q] Quit"
+        read pil
+        if [[ "${pil^^}" == "Q" ]]; then exit 0; fi
+        if [[ "${pil^^}" == "R" ]]; then continue; fi
+        if [ "$pil" == "0" ]; then NAV_PATH="$HOME"; elif [ "$pil" == "1" ]; then NAV_PATH="/"; elif [[ "$pil" =~ ^[0-9]+$ ]] && [ "$pil" -lt "$i" ]; then idx=$((pil-2)); l="${mounts[$idx]}"; NAV_PATH=$(echo "$l" | cut -d'|' -f1); else echo "Invalid!"; sleep 1; continue; fi
+
+        MOUNT_ROOT="$NAV_PATH"
+        BREAK_SRC=false
+        
+        # BROWSE LOOP
+        while true; do
+            print_header
+            echo -e "${BOLD_YELLOW}[ BROWSE SOURCE ]${NC} ${BOLD_WHITE}$NAV_PATH${NC}"
+            
+            # Tampilkan Jumlah yang sudah dipilih
+            SEL_COUNT=${#SELECTED_PATHS[@]}
+            if [ $SEL_COUNT -gt 0 ]; then
+                echo -e "${BOLD_GREEN}✅ Selected Items: $SEL_COUNT${NC} (Type 'd' to Finish)"
+            fi
+
+            mapfile -t contents < <(\ls -1 -A --group-directories-first --color=never "$NAV_PATH" 2>/dev/null)
+            count=1
+            
+            # Opsi Navigasi
+            echo -e " ----------------------------------------"
+            echo -e " [0] ✅ DONE / SELECT CURRENT FOLDER"
+            echo -e " ----------------------------------------"
+            
+            for item in "${contents[@]}"; do
+                fp="${NAV_PATH%/}/$item"
+                
+                # Cek apakah item ini sudah dipilih (ada di array)
+                IS_SELECTED=false
+                for s in "${SELECTED_PATHS[@]}"; do
+                    if [[ "$s" == "$fp" ]]; then IS_SELECTED=true; break; fi
+                done
+
+                if [ "$IS_SELECTED" = true ]; then MARK="[${BOLD_GREEN}*${NC}]"; else MARK="[ ]"; fi
+
+                if [ -d "$fp" ]; then 
+                    echo -e " $MARK [$count] 📁 ${BOLD_CYAN}$item/${NC}"
+                else 
+                    echo -e " $MARK [$count] 📄 $item"
+                fi
+                ((count++))
+            done
+            
+            if [ "$NAV_PATH" == "$MOUNT_ROOT" ] || [ "$NAV_PATH" == "/" ]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up One Level (..)"; fi
+            
+            show_footer "[Num] Enter Folder | [s Num] Toggle | [a] All | [d] Done | [b] $BACK_MSG"
+            read inp
+            
+            # --- LOGIC ---
+            
+            if [[ "${inp^^}" == "Q" ]]; then exit 0; fi
+            if [[ "${inp^^}" == "D" ]] || [[ "$inp" == "0" ]]; then
+                # Jika tidak ada yang dipilih via checkbox, anggap pilih folder saat ini
+                if [ ${#SELECTED_PATHS[@]} -eq 0 ]; then
+                    SELECTED_PATHS+=("$NAV_PATH")
+                    SELECTED_NAMES+=("Whole Folder")
+                fi
+                BREAK_SRC=true; break
+            fi
+            
+            # Logic Back
+            if [[ "${inp^^}" == "B" ]]; then 
+                if [ "$NAV_PATH" == "$MOUNT_ROOT" ] || [ "$NAV_PATH" == "/" ]; then break; else NAV_PATH=$(dirname "$NAV_PATH"); continue; fi
+            fi
+
+            # Logic Select All (a)
+            if [[ "${inp^^}" == "A" ]]; then
+                 for item in "${contents[@]}"; do
+                    full_p="${NAV_PATH%/}/$item"
+                    exists=false
+                    for s in "${SELECTED_PATHS[@]}"; do if [[ "$s" == "$full_p" ]]; then exists=true; break; fi; done
+                    if [ "$exists" = false ]; then SELECTED_PATHS+=("$full_p"); SELECTED_NAMES+=("$item"); fi
+                 done
+                 continue
+            fi
+            
+            # Logic Select Toggle (s <num>)
+            if [[ "$inp" =~ ^[sS][[:space:]]*([0-9]+)$ ]]; then
+                num="${BASH_REMATCH[1]}"
+                if [ "$num" -lt "$count" ] && [ "$num" -gt 0 ]; then
+                    idx=$((num-1)); item="${contents[$idx]}"; target="${NAV_PATH%/}/$item"
+                    
+                    # Toggle Logic (Uncheck if exists)
+                    found_idx=-1
+                    for i in "${!SELECTED_PATHS[@]}"; do
+                        if [[ "${SELECTED_PATHS[$i]}" == "$target" ]]; then found_idx=$i; break; fi
+                    done
+                    
+                    if [ $found_idx -ge 0 ]; then
+                        # Remove (Uncheck)
+                        unset 'SELECTED_PATHS[found_idx]'
+                        unset 'SELECTED_NAMES[found_idx]'
+                        SELECTED_PATHS=("${SELECTED_PATHS[@]}")
+                        SELECTED_NAMES=("${SELECTED_NAMES[@]}")
+                    else
+                        # Add (Check)
+                        SELECTED_PATHS+=("$target")
+                        SELECTED_NAMES+=("$item")
+                    fi
+                fi
+                continue
+            fi
+
+            # Logic Enter Folder (Num)
+            if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -lt "$count" ]; then
+                idx=$((inp-1)); sel="${contents[$idx]}"; target="${NAV_PATH%/}/$sel"
+                if [ -d "$target" ]; then 
+                    NAV_PATH="$target"
+                else 
+                    # Kalau file ditekan angkanya, otomatis select toggle
+                     found_idx=-1
+                    for i in "${!SELECTED_PATHS[@]}"; do if [[ "${SELECTED_PATHS[$i]}" == "$target" ]]; then found_idx=$i; break; fi; done
+                    if [ $found_idx -ge 0 ]; then
+                        unset 'SELECTED_PATHS[found_idx]'; unset 'SELECTED_NAMES[found_idx]'
+                        SELECTED_PATHS=("${SELECTED_PATHS[@]}"); SELECTED_NAMES=("${SELECTED_NAMES[@]}")
+                    else
+                        SELECTED_PATHS+=("$target"); SELECTED_NAMES+=("$sel")
+                    fi
+                fi
+            fi
+        done
+        if [ "$BREAK_SRC" = true ]; then return 0; fi
+    done
+}
+
+# --- 2. DESTINATION MODULE ---
+select_dest() {
+    while true; do
+        print_header
+        echo -e "${BOLD_YELLOW}[ STEP 2 ] SELECT DESTINATION${NC}"
+        # Tampilkan Source secara ringkas
+        if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
+            echo -e "Source: ${BOLD_CYAN}${SELECTED_PATHS[0]} ... and $((${#SELECTED_PATHS[@]}-1)) others${NC}"
+        else
+            echo -e "Source: ${BOLD_CYAN}${SELECTED_PATHS[0]}${NC}"
+        fi
+        echo -e "------------------------------------------"
+        mapfile -t mounts < <(mount | grep -E "type cifs|type nfs|type gpfs|type smb|on /mnt|on /media" | awk '{print $3 "|" $1}')
+        echo -e " [0] 🏠 HOME DIR ($HOME)"
+        echo -e " [1] 🌳 ROOT DIR (/)"
+        i=2
+        for line in "${mounts[@]}"; do
+            path=$(echo "$line" | cut -d'|' -f1)
+            src=$(echo "$line" | cut -d'|' -f2)
+            echo -e " [$i] 📂 ${BOLD_MAGENTA}$path${NC}"
+            echo -e "     └─ 🔗 Source: ${GREY}$src${NC}"
+            ((i++))
+        done
+        show_footer "[Number] Select | [R] Refresh | [B] Back"
+        read pil
+        if [[ "${pil^^}" == "Q" ]]; then exit 0; fi; if [[ "${pil^^}" == "B" ]]; then return 1; fi; if [[ "${pil^^}" == "R" ]]; then continue; fi
+        if [ "$pil" == "0" ]; then NAV_PATH="$HOME"; elif [ "$pil" == "1" ]; then NAV_PATH="/"; elif [[ "$pil" =~ ^[0-9]+$ ]] && [ "$pil" -lt "$i" ]; then idx=$((pil-2)); l="${mounts[$idx]}"; NAV_PATH=$(echo "$l" | cut -d'|' -f1); else echo "Invalid!"; sleep 1; continue; fi
+
+        MOUNT_ROOT="$NAV_PATH"
+        BREAK_DEST=false
+        while true; do
+            print_header
+            echo -e "${BOLD_YELLOW}[ BROWSE DESTINATION ]${NC} ${BOLD_WHITE}$NAV_PATH${NC}"
+            mapfile -t contents < <(\ls -1 -A --group-directories-first --color=never "$NAV_PATH" 2>/dev/null)
+            count=1
+            echo -e " [0] ✅ ${BOLD_GREEN}SELECT THIS FOLDER${NC}"
+            echo -e " ----------------------------------------"
+            for item in "${contents[@]}"; do
+                fp="${NAV_PATH%/}/$item"
+                if [ -d "$fp" ]; then echo -e " [$count] 📁 ${BOLD_CYAN}$item/${NC}"; ((count++)); fi
+            done
+            
+            if [ "$NAV_PATH" == "$MOUNT_ROOT" ] || [ "$NAV_PATH" == "/" ]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up One Level (..)"; fi
+            
+            show_footer "[Number] Enter | [MK] New Folder | [0] Select | [B] $BACK_MSG"
+            read inp
+            if [[ "${inp^^}" == "B" ]]; then 
+                if [ "$NAV_PATH" == "$MOUNT_ROOT" ] || [ "$NAV_PATH" == "/" ]; then break; else NAV_PATH=$(dirname "$NAV_PATH"); continue; fi
+            fi
+            if [[ "$inp" == "0" ]]; then DEST_ROOT="$NAV_PATH"; BREAK_DEST=true; break; fi
+            if [[ "${inp^^}" == "MK" ]]; then read -p "New Folder Name: " new_f; mkdir -p "$NAV_PATH/$new_f"; continue; fi
+            if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -lt "$count" ]; then
+                mapfile -t only_folders < <(\ls -1 -d --group-directories-first "$NAV_PATH"/*/ 2>/dev/null)
+                idx=$((inp-1)); sel=$(basename "${only_folders[$idx]}"); target="${NAV_PATH%/}/$sel"
+                if [ -d "$target" ]; then NAV_PATH="$target"; fi
+            fi
+        done
+        if [ "$BREAK_DEST" = true ]; then return 0; fi
+    done
+}
+
+# --- MAIN LOGIC ---
+STEP=1
+while true; do
+    if [ $STEP -eq 1 ]; then 
+        select_source
+        if [ ${#SELECTED_PATHS[@]} -eq 1 ]; then SUGGESTED_NAME=$(basename "${SELECTED_PATHS[0]}"); else SUGGESTED_NAME="Batch_Transfer_$(date +%H%M)"; fi
+        SUB_FOLDER="$SUGGESTED_NAME"
+        STEP=2
+    fi
+    if [ $STEP -eq 2 ]; then select_dest; if [ $? -eq 1 ]; then STEP=1; continue; fi; STEP=3; fi
+
+    if [ $STEP -eq 3 ]; then
+        if [ "$CURRENT_MODE" == "SAFE" ]; then THREADS=$(( CPU_CORES * 70 / 100 )); [ $THREADS -lt 1 ] && THREADS=1; MODE_MSG="${BOLD_GREEN}SAFE${NC}"; else THREADS=$(( CPU_CORES * 95 / 100 )); [ $THREADS -lt 1 ] && THREADS=1; MODE_MSG="${BOLD_RED}TURBO${NC}"; fi
+        if [ "$SUB_FOLDER" == "." ]; then DEST="${DEST_ROOT%/}/"; else DEST="${DEST_ROOT%/}/$SUB_FOLDER/"; fi
+        
+        print_header
+        echo -e "${BOLD_YELLOW}[ FINAL CONFIRMATION ]${NC}"
+        echo -e " [1] SOURCE  :"
+        for s in "${SELECTED_PATHS[@]}"; do echo -e "     - $s"; done
+        echo -e " [2] DEST    : $DEST_ROOT"
+        echo -e " [3] FOLDER  : $SUB_FOLDER"
+        echo -e " [4] THREADS : $THREADS ($MODE_MSG)"
+        echo -e " [5] MODE    : $CURRENT_MODE"
+        echo -e "------------------------------------------"
+        echo -e " TARGET      : ${BOLD_GREEN}$DEST${NC}"
+        echo -e "------------------------------------------"
+        echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
+        show_footer "Type 'OK' | [1-5] Edit | [MK] Create Folder | [B] Back"
+        read k
+        if [[ "$k" == "OK" ]]; then break; fi
+        case "${k^^}" in
+            Q) exit 0 ;; B) STEP=2; continue ;; MK) read -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub" ;;
+            1) select_source ;; 2) select_dest ;; 3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 4) read -p "Set Threads: " THREADS ;; 5) [ "$CURRENT_MODE" == "SAFE" ] && CURRENT_MODE="TURBO" || CURRENT_MODE="SAFE" ;;
+        esac
+    fi
+done
+
+# --- EXECUTION ---
+print_header
+echo -e "\n${BOLD_CYAN}🚀 INITIALIZING TRANSFER...${NC}"
+
+START_TIME=$(date +%s); START_DATE=$(date)
+cat <<EOF > "$REPORT_TXT"
+================================================================
+              ZTURBO TRANSFER REPORT
+================================================================
+JOB ID      : $JOB_ID
+USER        : $REAL_USER
+DATE        : $START_DATE
+----------------------------------------------------------------
+DESTINATION : $DEST
+MODE        : $CURRENT_MODE (Threads: $THREADS)
+SOURCES     :
+EOF
+for s in "${SELECTED_PATHS[@]}"; do echo " - $s" >> "$REPORT_TXT"; done
+echo "================================================================" >> "$REPORT_TXT"
+echo "LOGS START:" >> "$REPORT_TXT"
+
+echo ">> Calculating Source Metadata..."
+SRC_BYTES=0
+SRC_FILES=0
+for s in "${SELECTED_PATHS[@]}"; do
+    sb=$(du -sb "$s" 2>/dev/null | cut -f1)
+    sf=$(find "$s" -type f | wc -l)
+    SRC_BYTES=$((SRC_BYTES + sb))
+    SRC_FILES=$((SRC_FILES + sf))
+done
+
+if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then MON_SRC="${SELECTED_PATHS[0]}..++"; else MON_SRC="${SELECTED_PATHS[0]}"; fi
+echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$SRC_BYTES|$(date +%s)" > "$MONITOR_FILE"
+chmod 666 "$MONITOR_FILE" 2>/dev/null
+
+if [ "$CURRENT_MODE" == "SAFE" ]; then PREFIX="nice -n 10 ionice -c 2 -n 7"; else PREFIX=""; fi
+
+# Multi-select logic: Force Rsync (Safe) for batch stability
+if [ ${#SELECTED_PATHS[@]} -gt 1 ]; then
+    echo ">> Multi-select detected. Using RSYNC (Safe Mode) for batch integrity."
+    $PREFIX rsync -av --progress "${SELECTED_PATHS[@]}" "$DEST" >> "$REPORT_TXT" 2>&1
+    EXIT_CODE=$?
+else
+    # Single Source
+    if [ "$CURRENT_MODE" == "SAFE" ]; then 
+        $PREFIX rsync -av --progress "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+        EXIT_CODE=$?
+    else 
+        $PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v \
+        -o "-lptgoD --numeric-ids --checksum --no-compress --info=progress2" \
+        "${SELECTED_PATHS[0]}" "$DEST" >> "$REPORT_TXT" 2>&1
+        EXIT_CODE=$?
+    fi
+fi
+
+JOB_COMPLETED=true
+echo -e "\n${BOLD_YELLOW}🔎 VERIFYING DATA INTEGRITY...${NC}"
+DEST_BYTES=$(du -sb "$DEST" 2>/dev/null | cut -f1)
+DEST_FILES=$(find "$DEST" -type f | wc -l)
+
+if [ "$SRC_BYTES" -eq "$DEST_BYTES" ]; then SIZE_STATUS="MATCH ✅"; else SIZE_STATUS="MISMATCH ❌"; fi
+if [ "$SRC_FILES" -eq "$DEST_FILES" ]; then FILE_STATUS="MATCH ✅"; else FILE_STATUS="MISMATCH ❌"; fi
+
+if [ $EXIT_CODE -eq 0 ]; then 
+    if [[ "$SIZE_STATUS" == *"MATCH"* ]] && [[ "$FILE_STATUS" == *"MATCH"* ]]; then FINAL_STATUS="SUCCESS (VERIFIED)"; else FINAL_STATUS="WARNING (MISMATCH)"; fi
+else FINAL_STATUS="FAILED (Code: $EXIT_CODE)"; fi
+
+END_TIME=$(date +%s); DURATION=$((END_TIME - START_TIME)); DUR_FMT=$(format_duration $DURATION)
+SIZE_HUMAN=$(human_size $DEST_BYTES)
+
+cat <<EOF >> "$REPORT_TXT"
+
+================================================================
+                  RECONCILIATION REPORT
+================================================================
+METRIC         SOURCE            DESTINATION       STATUS
+----------------------------------------------------------------
+Total Bytes    $SRC_BYTES        $DEST_BYTES       $SIZE_STATUS
+Total Files    $SRC_FILES              $DEST_FILES             $FILE_STATUS
+----------------------------------------------------------------
+Duration    : $DUR_FMT
+Final Status: $FINAL_STATUS
+================================================================
+Report generated by ZTURBO v1.1
+EOF
+
+rm -f "$MONITOR_FILE"
+echo -e "\n✅ ${BOLD_GREEN}COMPLETED!${NC} Report saved."
+echo -e "Status: $FINAL_STATUS"

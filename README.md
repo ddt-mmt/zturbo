@@ -1,25 +1,89 @@
-# ZTurbo Project
+# 🚀 ZTURBO - High Performance Data Transfer Engine
 
-This project contains optimized Bash scripts for task automation and monitoring.
+![Version](https://img.shields.io/badge/version-1.3-blue.svg?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
+![Maintenance](https://img.shields.io/badge/maintenance-Active-success.svg?style=flat-square)
 
-## Files
+**ZTURBO** adalah *Command Line Interface (CLI)* canggih yang membungkus kekuatan `rsync` dan `fpsync` untuk keperluan transfer data skala besar (Big Data) antar server. Dilengkapi dengan manajemen proses anti-zombie dan dashboard monitoring real-time.
 
-- `zturbo`: Optimized engine for transfers and parallel verification (formerly `dturbo`).
-- `zmturbo`: Monitoring center for resource usage and job management (formerly `dmturbo`).
+---
 
-## Setup
+## 🔥 Fitur Unggulan
 
-Ensure the scripts are executable:
+| Fitur | Deskripsi |
+| :--- | :--- |
+| **⚡ Hybrid Engine** | Otomatis memilih antara `rsync` (Safe Mode) atau `fpsync` (Turbo Mode). |
+| **🛒 Multi-Select** | Pilih file & folder sesuka hati dengan sistem *checklist* sebelum dikirim. |
+| **🧟 Zombie Slayer** | Fitur keamanan yang mematikan proses macet hingga ke akarnya (PGID). |
+| **🛡️ Integrity Check** | Verifikasi otomatis di akhir transfer (Byte & File count audit). |
+| **📊 Smart Monitor** | Dashboard visual untuk memantau CPU, RAM, dan Progress Bar. |
 
-```bash
-chmod +x zturbo zmturbo
+---
+
+## 📸 Tampilan (Preview)
+
+### 1. Menu Transfer (ZTURBO)
+Antarmuka interaktif untuk memilih source dan destination.
+
+```text
+┌──────────────────────────────────────────┐
+│      ZTURBO - DATA TRANSFER ENGINE       │
+└──────────────────────────────────────────┘
+ [ BROWSE SOURCE ] /mnt/data/Project_Alpha
+ ✅ Selected Items: 2
+
+ [ ] [1] 📁 2023_Backup/
+ [*] [2] 📁 2024_Backup/      <-- [TERPILIH]
+ [ ] [3] 📁 Images/
+ [*] [4] 📄 config.yaml       <-- [TERPILIH]
+
+ 👉 INPUT > d (Done)
 ```
 
-## Usage
+### 2. Dashboard Monitor (ZMTURBO)
+Pantau performa transfer secara real-time.
 
-Run the scripts directly:
+```text
+┌──────────────────────────────────────────┐
+│   ZMTURBO V1.1: MONITORING CENTER        │
+└──────────────────────────────────────────┘
+ HOST: Server-JKT | IP: 10.X.X.X
+ HEALTH: CPU Load: 2.45 | RAM: 18%
+
+ [ A. ACTIVE TRANSFERS ]
+ PID     USER    CPU%   PROGRESS           DESTINATION
+ -------------------------------------------------------
+ 45120   didit   85%    [#######.......]   .../2024_Backup
+ 45199   root    12%    [#############.]   .../SysLog
+```
+
+---
+
+## 📦 Instalasi Cepat
+Salin dan jalankan perintah berikut di terminal server Anda:
 
 ```bash
-./zturbo
-./zmturbo
+# 1. Clone Repository
+git clone https://github.com/ddt-mmt/zturbo.git
+cd zturbo
+
+# 2. Jalankan Installer (Otomatis)
+chmod +x install.sh
+sudo ./install.sh
 ```
+
+## 🚀 Cara Penggunaan
+**Memulai Transfer**
+```bash
+sudo zturbo
+```
+
+**Membuka Monitoring**
+```bash
+sudo zmturbo
+```
+
+## ⚙️ Requirements
+*   **OS**: Linux (Ubuntu, Debian, CentOS, RHEL).
+*   **Core**: `rsync` (Wajib), `fpart` (Wajib untuk Turbo Mode).
