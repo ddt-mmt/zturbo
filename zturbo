@@ -72,7 +72,19 @@ check_deps
 cleanup() {
     rm -f "$MONITOR_FILE"
     rm -f /tmp/dt_src_$$ /tmp/dt_dest_$$ /tmp/zturbo_size_$$ 2>/dev/null
+    
+    # KILL ALL CHILD PROCESSES (Fix for Orphaned Rsync)
+    # 1. Kill Governor
     if [ -n "$GOV_PID" ]; then kill $GOV_PID 2>/dev/null; fi
+    
+    # 2. Kill explicit background PIDs (Parallel Mode)
+    if [ ${#BG_PIDS[@]} -gt 0 ]; then
+        kill "${BG_PIDS[@]}" 2>/dev/null
+    fi
+
+    # 3. Kill any remaining child processes of this script
+    pkill -P $$ 2>/dev/null
+
     if [ "$JOB_COMPLETED" = false ]; then
         if [ -f "$REPORT_TXT" ]; then
             echo -e "\nSTATUS      : CANCELLED/FAILED (Interrupted)" >> "$REPORT_TXT"
