@@ -183,11 +183,35 @@ while true; do
         printf "% -20s % -9s % -9s ${GREY}%s${NC}\n" "$mnt" "$sz" "$fr" "$src"
     done
     
-    show_footer "[R] Refresh | [K] Kill Menu | [H] History | [Q] Quit"
+    show_footer "[R] Refresh | [K] Kill Menu | [E] Panic Clean | [H] History | [Q] Quit"
     read -t $REFRESH_RATE -n 1 -s key
     ((LOOP_IDX++))
 
     if [[ "${key^^}" == "Q" ]]; then exit 0; fi
+
+    # --- EMERGENCY / PANIC CLEAN ---
+    if [[ "${key^^}" == "E" ]]; then
+        clear
+        echo -e "${R}>>> EMERGENCY PANIC CLEAN (SAPU JAGAT) <<<${NC}"
+        echo -e "${Y}Fitur ini akan mematikan PAKSA semua proses:${NC}"
+        echo -e " - zturbo, zmturbo (Dashboard)"
+        echo -e " - rsync, fpsync, fpart (Transfer Engine)"
+        echo -e "Milik User: ${BOLD_WHITE}$REAL_USER${NC}"
+        echo "-----------------------------------------------------"
+        read -p "YAKIN INGIN MEMBERSIHKAN SEMUANYA? (y/n): " conf
+        if [[ "${conf^^}" == "Y" ]]; then
+            echo -e "\n${R}💥 BOOM! Mengirim sinyal kill ke semua proses terkait...${NC}"
+            # Kill pattern match for current user
+            if [ "$REAL_USER" == "root" ]; then
+                pkill -9 -f "zturbo|zmturbo|rsync|fpsync|fpart"
+            else
+                pkill -9 -u "$REAL_USER" -f "zturbo|zmturbo|rsync|fpsync|fpart"
+            fi
+            sleep 1
+            echo "Selesai. Keluar..."
+            exit 0
+        fi
+    fi
     
     # --- HISTORY MENU ---
     if [[ "${key^^}" == "H" ]]; then
