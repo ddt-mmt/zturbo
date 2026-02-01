@@ -317,13 +317,20 @@ calc_optimal_threads() {
     else
         # TURBO: Aggressive I/O Over-provisioning
         # rsync is I/O bound, so we safely run more threads than cores.
+        # FIX FOR CCR1072/High-Core Routers: Cap default multiplier to avoid overhead.
+        
         target_threads=$(( cores * 4 ))
         
+        # SOFT CAP: For standard devices (like CCR with 16GB RAM), 200+ threads is counter-productive.
+        # We limit "Automatic Turbo" to 64 threads to prevent context-switching death.
+        [ $target_threads -gt 64 ] && target_threads=64
+
         # HPC SCALING (For 100Gbps+ links):
-        # If server has huge RAM (>64GB), we assume it can handle higher concurrency
+        # If server has huge RAM (>64GB), we assume it can handle higher concurrency (True HPC)
         if [ $mem_total_mb -gt 64000 ]; then
              local boost_threads=$(( cores * 8 ))
-             [ $boost_threads -gt $target_threads ] && target_threads=$boost_threads
+             # Remove the soft cap for true HPC nodes
+             target_threads=$boost_threads
         fi
     fi
     
@@ -353,9 +360,12 @@ while true; do
     if [ $STEP -eq 2 ]; then select_dest; if [ $? -eq 1 ]; then STEP=1; continue; fi; STEP=3; fi
 
     if [ $STEP -eq 3 ]; then
+        # Calculate Recommended Threads (Always Fresh)
+        REC_THREADS=$(calc_optimal_threads "$CURRENT_MODE")
+
         # Initial calculation if not set manually
         if [ -z "$MANUAL_THREADS" ]; then
-            THREADS=$(calc_optimal_threads "$CURRENT_MODE")
+            THREADS=$REC_THREADS
         fi
         
         if [ "$CURRENT_MODE" == "SAFE" ]; then 
@@ -385,7 +395,7 @@ while true; do
         for s in "${SELECTED_PATHS[@]}"; do echo -e "     - $s"; done
         echo -e " [2] DEST    : $DEST_ROOT"
         echo -e " [3] FOLDER  : $SUB_FOLDER"
-        echo -e " [4] THREADS : $THREADS ($MODE_MSG)"
+        echo -e " [4] THREADS : ${BOLD_WHITE}$THREADS${NC} (Rec: $REC_THREADS) $MODE_MSG"
         echo -e " [5] MODE    : $CURRENT_MODE"
         echo -e "------------------------------------------"
         echo -e " TARGET      : ${BOLD_GREEN}$DEST${NC}"
@@ -397,7 +407,20 @@ while true; do
         case "${k^^}" in
             Q) exit 0 ;; B) STEP=2; continue ;; MK) read -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub" ;; 
             1) select_source ;; 2) select_dest ;; 3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 
-            4) read -p "Set Threads: " MANUAL_THREADS || exit 1; THREADS=$MANUAL_THREADS ;; 
+            4) 
+                echo -e "------------------------------------------"
+                echo -e " System Recommendation: ${BOLD_GREEN}$REC_THREADS threads${NC}"
+                echo -e " (Based on $(nproc) Cores & $(free -m | grep Mem | awk '{print $2}')MB RAM in $CURRENT_MODE mode)"
+                echo -e "------------------------------------------"
+                read -p " Set Threads manually: " MANUAL_THREADS || exit 1
+                if [[ "$MANUAL_THREADS" =~ ^[0-9]+$ ]]; then
+                    THREADS=$MANUAL_THREADS
+                else
+                    echo "Invalid number!"
+                    sleep 1
+                    MANUAL_THREADS="" # Reset if invalid
+                fi 
+            ;; 
             5) 
                 [ "$CURRENT_MODE" == "SAFE" ] && CURRENT_MODE="TURBO" || CURRENT_MODE="SAFE"
                 # Recalculate unless manual
