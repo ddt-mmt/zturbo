@@ -1,8 +1,8 @@
 #!/bin/bash
 # ========================================================
-#    ZTURBO V1.1 (DEV - OPTIMIZED)
-#    - Removed --checksum for Real Turbo Speed
-#    - Parallel Verification (Source vs Dest)
+#    ZTURBO V1.2 (STABLE - CCR SAFE)
+#    - Reduced Max Threads to 24 (Prevents NFS/CCR Hang)
+#    - Optimized for High PPS Environments
 # ========================================================
 #
 # MIT License
@@ -135,7 +135,7 @@ print_header() {
     clear
     MY_IP=$(hostname -I | awk '{print $1}')
     echo -e "${BOLD_GREEN}==========================================${NC}"
-    echo -e "${BOLD_GREEN}       ZTURBO - DEV OPTIMIZED ENGINE      ${NC}"
+    echo -e "${BOLD_GREEN}       ZTURBO V1.2 - CCR SAFE EDITION     ${NC}"
     echo -e "${BOLD_GREEN}==========================================${NC}"
     echo -e "👤 USER: ${BOLD_YELLOW}$REAL_USER${NC} | 🌐 IP: ${BOLD_MAGENTA}$MY_IP${NC} | 💾 MODE: $CURRENT_MODE"
     echo -e "------------------------------------------"
@@ -333,9 +333,10 @@ calc_optimal_threads() {
         
         target_threads=$(( cores * 4 ))
         
-        # SOFT CAP: For standard devices (like CCR with 16GB RAM), 200+ threads is counter-productive.
-        # We limit "Automatic Turbo" to 64 threads to prevent context-switching death.
-        [ $target_threads -gt 64 ] && target_threads=64
+        # SOFT CAP (STRICT): Optimized for Mikrotik CCR1072/NFS limits.
+        # High thread counts (64+) cause Packet-Per-Second (PPS) flooding on routers.
+        # We limit "Automatic Turbo" to 24 threads to ensure stability over raw speed.
+        [ $target_threads -gt 24 ] && target_threads=24
 
         # HPC SCALING (For 100Gbps+ links):
         # If server has huge RAM (>64GB), we assume it can handle higher concurrency (True HPC)
