@@ -338,13 +338,13 @@ calc_optimal_threads() {
         # We limit "Automatic Turbo" to 24 threads to ensure stability over raw speed.
         [ $target_threads -gt 24 ] && target_threads=24
 
-        # HPC SCALING (For 100Gbps+ links):
-        # If server has huge RAM (>64GB), we assume it can handle higher concurrency (True HPC)
-        if [ $mem_total_mb -gt 64000 ]; then
-             local boost_threads=$(( cores * 8 ))
-             # Remove the soft cap for true HPC nodes
-             target_threads=$boost_threads
-        fi
+        # HPC SCALING DISABLED FOR SAFETY
+        # Reason: Even with >64GB RAM, the Router (CCR) is the bottleneck.
+        # We enforce the 24 thread limit strictly.
+        # if [ $mem_total_mb -gt 64000 ]; then
+        #      local boost_threads=$(( cores * 8 ))
+        #      target_threads=$boost_threads
+        # fi
     fi
     
     # 2. FINAL CUT-OFF
