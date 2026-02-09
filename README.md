@@ -129,7 +129,13 @@ PID     USER     CPU%   SPEED        ETA          PROGRESS                     T
 
 ## 🤝 Kontribusi & Lisensi
 
-Dibuat dengan ❤️ untuk komunitas SysAdmin & Network Engineer.
 Dilisensikan di bawah **MIT License**.
 
-Pull Request sangat diterima untuk pengembangan fitur lebih lanjut!
+---
+
+## 👨‍💻 Credits
+*   **Original Idea & Concept**: [ddt-mmt](https://github.com/ddt-mmt)
+*   **Developer**: [ddt-mmt](https://github.com/ddt-mmt) & Gemini CLI Agent
+
+Dibuat dengan ❤️ untuk komunitas SysAdmin & Network Engineer.
+
