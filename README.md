@@ -16,6 +16,7 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 *   **🛡️ Auto-Retry Mechanism**: Automatically retries transfers (up to 3 times) in case of packet loss or transient network interruptions.
 *   **⏱️ Smart Timeout**: Detects "zombie" connections and resets them automatically to prevent resource exhaustion on network routers.
 *   **💾 Pre-Flight Check**: Calculates source data size against destination disk availability before execution to prevent "Disk Full" errors.
+*   **📂 Persistent Logs**: Job history and reports are securely stored in `~/.zturbo/reports`, safe from reboots or tool updates.
 *   **⌨️ Smart Input**: Full *Readline* support (Backspace/Arrow keys) in all interactive menus for a seamless user experience.
 
 ### 2. Hybrid Parallel Engine
@@ -37,6 +38,7 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 ### V1.3.3 (Current)
 *   **📡 Network Monitor**: Added real-time Download (RX) and Upload (TX) speed indicators.
 *   **🧵 Thread Tracking**: Added live active thread/process counter per job.
+*   **📂 Persistent History**: Reports are now saved to `~/.zturbo/reports` to survive reboots and updates.
 *   **✨ UX Polish**: Implemented Smart Input buffering and strict Anti-Flicker cursor management.
 *   **🐛 Critical Fix**: Resolved an issue where the transfer process would not start (infinite loop) after confirming with "OK" in the final review screen.
 
