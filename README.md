@@ -62,6 +62,17 @@ ZTURBO memiliki dua "kepribadian" yang bisa dipilih sesuai situasi:
     ```
     *Script otomatis menginstall `rsync`, `fpart`, dan membuat symlink ke `/usr/local/bin`.*
 
+### Alternatif: Install via Paket .DEB (Recommended)
+Jika Anda ingin instalasi yang bersih dan termanajemen sistem:
+```bash
+# Download file .deb dari folder dist/ atau release page
+sudo dpkg -i zturbo_1.3.1_all.deb
+
+# Jika ada error dependency:
+sudo apt-get install -f
+```
+Metode ini memastikan `rsync` dan `fpart` ikut terinstall otomatis.
+
 ---
 
 ## 🚀 Cara Penggunaan
