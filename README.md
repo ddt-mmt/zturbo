@@ -1,28 +1,26 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.1%20(Dev)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3%20(Stable)-green.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
-![Maintenance](https://img.shields.io/badge/maintenance-Active-success.svg?style=flat-square)
 
 **ZTURBO** adalah toolkit *Command Line Interface (CLI)* canggih yang dirancang untuk mempercepat dan mempermudah proses migrasi data skala besar (Big Data) antar server atau direktori. Toolkit ini menggabungkan kekuatan `rsync` dan `fpsync` dengan antarmuka yang ramah pengguna serta sistem monitoring yang tangguh.
 
 ---
 
-## 🔥 Fitur Unggulan
+## 🔥 Fitur Unggulan (V1.3 Optimized)
 
 ### 1. ZTURBO (The Engine)
 *   **⚡ Hybrid Architecture**: Secara cerdas menangani transfer file kecil maupun besar.
-*   **🛒 Multi-Select Interface**: Memungkinkan pengguna memilih beberapa file atau folder sekaligus dari sumber yang berbeda sebelum memulai transfer.
-*   **🛡️ Parallel Verification**: Melakukan verifikasi data (Source vs Destination) secara paralel untuk memastikan integritas data tanpa mengorbankan waktu.
-*   **📝 Automated Reporting**: Menghasilkan laporan detail (TXT) untuk setiap pekerjaan transfer, tersimpan rapi di `/tmp/zturbo_reports`.
-*   **🛑 Safety First**: Dilengkapi dengan mekanisme "Safe Mode" dan penanganan sinyal (Ctrl+C) yang membersihkan file sementara secara otomatis.
+*   **🛒 O(1) Map Selection**: Menggunakan *Associative Array* untuk pemilihan file yang instan meskipun di dalam folder berisi ribuan item.
+*   **📄 Smart Pagination**: Interface browser file kini dilengkapi navigasi halaman (Next/Prev) untuk menangani direktori besar dengan rapi.
+*   **🛡️ Parallel Verification**: Melakukan verifikasi data (Source vs Destination) secara paralel untuk memastikan integritas data.
+*   **📝 Automated Reporting**: Menghasilkan laporan detail (TXT) untuk setiap pekerjaan transfer.
 
 ### 2. ZMTURBO (The Monitor)
-*   **📊 Real-time Dashboard**: Memantau penggunaan CPU, RAM, dan Load Average server secara langsung.
-*   **🧟 Zombie Slayer**: Fitur keamanan tingkat lanjut yang mampu mendeteksi dan mematikan proses "zombie" atau proses yang macet hingga ke akarnya (menggunakan Process Group ID).
-*   **📉 Smart Resource Calculation**: Menghitung kapasitas aman server (Safe Pool) berdasarkan RAM yang tersedia untuk mencegah *server crash* akibat overload.
-*   **👁️ Granular Visibility**: Melihat detail setiap job transfer: PID, User, CPU Usage per job, RAM Usage, dan Progress Bar visual.
+*   **📊 Low-Overhead Dashboard**: Optimasi *string processing* murni (tanpa subshell) sehingga sangat ringan di CPU.
+*   **🧟 Zombie Slayer**: Fitur keamanan tingkat lanjut yang mampu mendeteksi dan mematikan proses yang macet hingga ke akarnya.
+*   **📉 Capacity Guard**: Menghitung batas aman (Safe Pool) berdasarkan RAM yang tersedia secara otomatis.
 
 ---
 

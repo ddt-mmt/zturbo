@@ -1,9 +1,8 @@
 #!/bin/bash
 # ========================================================
-#    ZMTURBO V1.2 (STABLE)
-#    - Feature: Zombie Slayer (PGID Kill)
-#    - Feature: Resource Usage (CPU/RAM per job)
-#    - WARN: Displays IO Wait % (Anti-Hang Indicator)
+#    ZMTURBO V1.3 (OPTIMIZED)
+#    - Optimized Drawing (No Subshells/External Calls)
+#    - CPU Efficient Loop
 # ========================================================
 #
 # MIT License
@@ -36,27 +35,50 @@ mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
 # CONFIG: REFRESH RATE (Detik)
 REFRESH_RATE=2
 
-if [ -n "$SUDO_USER" ]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
+if [[ -n "$SUDO_USER" ]]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
 
 G='\033[1;32m'; Y='\033[1;33m'; R='\033[1;31m'; C='\033[1;36m'; W='\033[1;37m'; NC='\033[0m'; GREY='\033[0;90m'
 trap 'echo -e "\n${R}Exiting Monitor...${NC}"; exit 0' SIGINT
 
+# --- OPTIMIZED DRAW BAR ---
+# Pre-define strings to avoid loop/seq overhead
+# Unicode Blocks for Modern Look
+ALL_BLOCK="████████████████████" # 20 chars
+ALL_EMPTY="░░░░░░░░░░░░░░░░░░░░"
+
 draw_bar() {
-    local p=$1; local w=15; local f=$((p * w / 100))
-    local bar=$(printf "%0.s#" $(seq 1 $f 2>/dev/null)); local emp=$(printf "%0.s." $(seq 1 $((w - f)) 2>/dev/null))
-    echo -ne "[${G}${bar}${NC}${emp}]"
+    local p=$1
+    local w=20
+    local f=$((p * w / 100))
+    # Safety bounds
+    if [[ $f -lt 0 ]]; then f=0; fi
+    if [[ $f -gt $w ]]; then f=$w; fi
+    
+    local remain=$((w - f))
+    
+    # Bash substring expansion ${VAR:OFFSET:LENGTH}
+    # Green filled blocks, Grey empty blocks
+    echo -ne "${G}${ALL_BLOCK:0:f}${GREY}${ALL_EMPTY:0:remain}${NC}"
 }
+
 fmt_size() {
-    if [ "$1" -ge 1073741824 ]; then echo "$(awk -v v=$1 'BEGIN{printf "%.1fG", v/1073741824}')"
-    elif [ "$1" -ge 1048576 ]; then echo "$(awk -v v=$1 'BEGIN{printf "%.1fM", v/1048576}')"
-    else echo "${1}B"; fi
+    local v=$1
+    if [[ $v -ge 1073741824 ]]; then 
+        awk -v v=$v 'BEGIN{printf "%.1fG", v/1073741824}'
+    elif [[ $v -ge 1048576 ]]; then 
+        awk -v v=$v 'BEGIN{printf "%.1fM", v/1048576}'
+    else 
+        echo "${v}B"
+    fi
 }
+
 fmt_time() {
     local T=$1
-    if [ $T -gt 86400 ]; then printf ">24h"
-    elif [ $T -gt 3600 ]; then printf "%dh%02dm" $((T/3600)) $(( (T%3600)/60 ))
+    if [[ $T -gt 86400 ]]; then printf ">24h"
+    elif [[ $T -gt 3600 ]]; then printf "%dh%02dm" $((T/3600)) $(( (T%3600)/60 ))
     else printf "%02dm%02ds" $(( (T%3600)/60 )) $((T%60)); fi
 }
+
 show_footer() {
     echo -e "\n${C}--------------------------------------------------------------------------${NC}"
     echo -e "$1"
@@ -69,53 +91,73 @@ declare -A PREV_TIME
 
 LOOP_IDX=0
 while true; do
-    clear
+    # UI FIX: Clear screen fully to prevent ghosting/doubling
+    # \033[2J = Clear entire screen, \033[H = Move cursor to home (0,0)
+    printf "\033[2J\033[H"
+    
+    # SYSTEM DATA GATHERING (ROBUST MODE)
+    # 1. IP
     MY_IP=$(hostname -I | awk '{print $1}')
     
-    # SYSTEM HEALTH CHECK
-    # Get IO Wait from top batch mode (approximate)
-    IOWAIT=$(top -bn1 | grep "Cpu(s)" | awk '{print $10}' | cut -d. -f1)
-    if [ -z "$IOWAIT" ]; then IOWAIT=0; fi
+    # 2. LOAD AVG (Direct from proc)
+    if [[ -r /proc/loadavg ]]; then
+        read LOAD _ < /proc/loadavg
+    else
+        LOAD=$(LC_ALL=C uptime | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs)
+    fi
     
-    LOAD=$(uptime | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs)
-    MEM_TOT=$(free -m | grep Mem | awk '{print $2}')
-    MEM_USED=$(free -m | grep Mem | awk '{print $3}')
-    MEM_PERC=$((MEM_USED * 100 / MEM_TOT))
+    # 3. MEMORY (Force C locale for dots/integers)
+    # Output: total used
+    read MEM_TOT MEM_USED < <(LC_ALL=C free -m | grep Mem | awk '{print $2, $3}')
     
-    # Colorize IO Wait (Danger Zone > 30%)
-    if [ "$IOWAIT" -gt 30 ]; then IO_COL=$R; else IO_COL=$G; fi
+    if [[ "$MEM_TOT" -gt 0 ]]; then
+        MEM_PERC=$((MEM_USED * 100 / MEM_TOT))
+    else
+        MEM_PERC=0
+    fi
+    
+    # 4. IO WAIT (Safe Parsing)
+    # vmstat is more stable than top parsing
+    IOWAIT=$(LC_ALL=C vmstat 1 2 | tail -1 | awk '{print $16}') 
+    # If vmstat missing/fails, fallback to 0
+    if [[ ! "$IOWAIT" =~ ^[0-9]+$ ]]; then IOWAIT=0; fi
 
-    # CALCULATE CAPACITY (SYCHRONIZED WITH ZTURBO LOGIC)
+    # COLORS logic
+    if [[ "$IOWAIT" -gt 30 ]]; then IO_COL=$R; else IO_COL=$G; fi
+    if [[ $MEM_PERC -gt 80 ]]; then MEM_COL=$R; elif [[ $MEM_PERC -gt 50 ]]; then MEM_COL=$Y; else MEM_COL=$G; fi
+
+    # CALC LIMITS
     MEM_GUARD=$(( MEM_TOT * 20 / 100 ))
     MEM_SAFE=$(( MEM_TOT * 80 / 100 ))
     MAX_THREADS_SAFE=$(( MEM_SAFE / 60 ))
     [ $MAX_THREADS_SAFE -lt 2 ] && MAX_THREADS_SAFE=2
 
-    if [ $MEM_PERC -gt 80 ]; then MEM_COL=$R; elif [ $MEM_PERC -gt 50 ]; then MEM_COL=$Y; else MEM_COL=$G; fi
-
-    echo -e "${C}=== ZMTURBO V1.2 (CCR SAFE): MONITORING CENTER ===${NC}"
-    echo -e "HOST: ${W}$(hostname)${NC} | IP: ${Y}$MY_IP${NC} | LOGIN: ${Y}$REAL_USER${NC}"
-    echo -e "HEALTH: CPU Load: ${W}$LOAD${NC} | RAM: ${MEM_COL}${MEM_USED}MB (${MEM_PERC}%)${NC} | IO WAIT: ${IO_COL}${IOWAIT}%${NC}"
-    echo -e "CAPACITY: ${G}Max Threads: $MAX_THREADS_SAFE${NC} (Safe Pool) | ${Y}OS Guard: ${MEM_GUARD}MB${NC} (Reserved)"
+    # DRAW HEADER (With Padding to clear old text)
+    echo -e "${C}=== ZMTURBO V1.3 (OPTIMIZED): MONITORING CENTER ===${NC}        "
+    echo -e "HOST : ${W}$(hostname)${NC} | IP: ${Y}$MY_IP${NC} | USER: ${Y}$REAL_USER${NC}        "
+    echo -e "STATS: CPU Load: ${W}$LOAD${NC} | RAM: ${MEM_COL}${MEM_USED}MB (${MEM_PERC}%)${NC} | IO: ${IO_COL}${IOWAIT}%${NC}        "
+    echo -e "LIMIT: Max Threads: ${G}$MAX_THREADS_SAFE${NC} | OS Guard: ${Y}${MEM_GUARD}MB${NC}        "
     
-    # [A] ACTIVE TRANSFERS
-    echo -e "\n${Y}[ A. ACTIVE TRANSFERS ]${NC}"
-    printf "%-7s %-8s %-6s %-12s %-12s %-16s %s\n" "PID" "USER" "CPU%" "SPEED" "ETA" "PROGRESS" "DESTINATION"
+    echo -e "\n${Y}[ A. ACTIVE TRANSFERS ]${NC}                                        "
+    printf "% -7s % -8s % -6s % -12s % -12s % -26s %s\n" "PID" "USER" "CPU%" "SPEED" "ETA" "PROGRESS" "DESTINATION"
     echo "--------------------------------------------------------------------------"
     count=0
     
     # OPTIMIZATION: Throttling DU Logic (Every 5 loops = 10s)
     RUN_DU=false
-    if [ $((LOOP_IDX % 5)) -eq 0 ]; then RUN_DU=true; fi
+    if [[ $((LOOP_IDX % 5)) -eq 0 ]]; then RUN_DU=true; fi
     NOW_TS=$(date +%s)
 
-    for f in $DASHBOARD_DIR/*.info; do
-        if [ -f "$f" ]; then
+    # Use nullglob to avoid literal *.info if no files exist
+    shopt -s nullglob
+    for f in "$DASHBOARD_DIR"/*.info; do
+        if [[ -f "$f" ]]; then
             IFS='|' read -r pid owner mode src dest total start_ts < "$f"
+            
+            # Check if process is still running
             if ps -p $pid > /dev/null; then
-                # RESOURCE CALCULATION (AGGREGATE TREE)
                 pgid=$(ps -o pgid= -p $pid 2>/dev/null | xargs)
-                if [ -n "$pgid" ]; then
+                if [[ -n "$pgid" ]]; then
                     stats=$(ps --no-headers -g $pgid -o %cpu 2>/dev/null | awk '{cpu+=$1} END {print cpu}')
                     cpu_usage=$(echo "$stats" | awk '{printf "%.1f", $1}')
                 else
@@ -125,20 +167,18 @@ while true; do
                 CACHE_FILE="/tmp/zmturbo_cache_$pid"
                 curr=0
                 
-                # OPTIMIZED DISK CHECK (Run every 10s via LOOP_IDX)
-                if [ "$RUN_DU" = true ]; then
+                if [[ "$RUN_DU" == true ]]; then
                      curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
-                     [ -n "$curr" ] && echo "$curr" > "$CACHE_FILE"
+                     [[ -n "$curr" ]] && echo "$curr" > "$CACHE_FILE"
                      
-                     # SPEED & ETA CALCULATION
-                     if [ -n "${PREV_SIZE[$pid]}" ]; then
+                     if [[ -n "${PREV_SIZE[$pid]}" ]]; then
                          delta_bytes=$(( curr - ${PREV_SIZE[$pid]} ))
                          delta_time=$(( NOW_TS - ${PREV_TIME[$pid]} ))
-                         if [ $delta_time -gt 0 ] && [ $delta_bytes -ge 0 ]; then
+                         if [[ $delta_time -gt 0 ]] && [[ $delta_bytes -ge 0 ]]; then
                              spd=$(( delta_bytes / delta_time ))
-                             if [ $spd -gt 0 ]; then
+                             if [[ $spd -gt 0 ]]; then
                                  SPEED_TXT="$(fmt_size $spd)/s"
-                                 if [[ "$total" =~ ^[0-9]+$ ]] && [ "$total" -gt 0 ]; then
+                                 if [[ "$total" =~ ^[0-9]+$ ]] && [[ "$total" -gt 0 ]]; then
                                      rem_bytes=$(( total - curr ))
                                      eta_sec=$(( rem_bytes / spd ))
                                      ETA_TXT=$(fmt_time $eta_sec)
@@ -153,24 +193,26 @@ while true; do
                      PREV_SIZE[$pid]=$curr; PREV_TIME[$pid]=$NOW_TS
                      echo "$SPEED_TXT|$ETA_TXT" > "${CACHE_FILE}_meta"
                 else
-                     if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
-                     if [ -f "${CACHE_FILE}_meta" ]; then IFS='|' read -r SPEED_TXT ETA_TXT < "${CACHE_FILE}_meta"; fi
+                     if [[ -f "$CACHE_FILE" ]]; then curr=$(cat "$CACHE_FILE"); fi
+                     if [[ -f "${CACHE_FILE}_meta" ]]; then IFS='|' read -r SPEED_TXT ETA_TXT < "${CACHE_FILE}_meta"; fi
                 fi
 
-                [ -z "$curr" ] && curr=0
-                [ -z "$SPEED_TXT" ] && SPEED_TXT="-"
-                [ -z "$ETA_TXT" ] && ETA_TXT="-"
+                [[ -z "$curr" ]] && curr=0
+                [[ -z "$SPEED_TXT" ]] && SPEED_TXT="-"
+                [[ -z "$ETA_TXT" ]] && ETA_TXT="-"
 
-                if [ "$total" == "CALC" ]; then 
+                if [[ "$total" == "CALC" ]]; then 
                     PERC_TXT="Calc"; BAR=$(draw_bar 0); CURR_FMT=$(fmt_size $curr)
                 else
-                    if [ "$total" -gt 0 ]; then perc=$((curr * 100 / total)); else perc=0; fi
-                    [ $perc -gt 100 ] && perc=100
+                    if [[ "$total" -gt 0 ]]; then perc=$((curr * 100 / total)); else perc=0; fi
+                    [[ $perc -gt 100 ]] && perc=100
                     PERC_TXT="${perc}%"; BAR=$(draw_bar $perc); CURR_FMT=$(fmt_size $curr)
                 fi
-                d_name=$(basename "$dest"); if [ "$owner" == "$REAL_USER" ]; then CL=$G; else CL=$W; fi
+                d_name=$(basename "$dest")
+                if [[ "$owner" == "$REAL_USER" ]]; then CL=$G; else CL=$W; fi
                 
-                printf "${CL}%-7s %-8s %-6s %-12s %-12s %-16s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT" ".../$d_name"
+                # Removed brackets around BAR, expanded column width
+                printf "${CL}%-7s %-8s %-6s %-12s %-12s %-26s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT" ".../$d_name"
                 ((count++))
             else 
                  rm -f "$f" 2>/dev/null
@@ -179,9 +221,10 @@ while true; do
             fi
         fi
     done
-    if [ $count -eq 0 ]; then echo -e " ${R}(No active transfers)${NC}"; fi
+    shopt -u nullglob
+    
+    if [[ $count -eq 0 ]]; then echo -e " ${R}(No active transfers)${NC}"; fi
 
-    # [B] STORAGE STATUS
     echo -e "\n${Y}[ B. STORAGE STATUS ]${NC}"
     echo "--------------------------------------------------------------------------"
     printf "% -20s % -9s % -9s %s\n" "MOUNT" "SIZE" "FREE" "SOURCE"
@@ -196,31 +239,24 @@ while true; do
 
     if [[ "${key^^}" == "Q" ]]; then exit 0; fi
 
-    # --- EMERGENCY / PANIC CLEAN ---
     if [[ "${key^^}" == "E" ]]; then
         clear
         echo -e "${R}>>> EMERGENCY PANIC CLEAN (SAPU JAGAT) <<<${NC}"
-        echo -e "${Y}Fitur ini akan mematikan PAKSA semua proses:${NC}"
-        echo -e " - zturbo, zmturbo (Dashboard)"
-        echo -e " - rsync, fpsync, fpart (Transfer Engine)"
-        echo -e "Milik User: ${BOLD_WHITE}$REAL_USER${NC}"
+        echo -e "${Y}WARNING: Killing all ZTURBO processes for user: ${BOLD_WHITE}$REAL_USER${NC}"
         echo "-----------------------------------------------------"
-        read -p "YAKIN INGIN MEMBERSIHKAN SEMUANYA? (y/n): " conf
+        read -p "CONFIRM? (y/n): " conf
         if [[ "${conf^^}" == "Y" ]]; then
-            echo -e "\n${R}💥 BOOM! Mengirim sinyal kill ke semua proses terkait...${NC}"
-            # Kill pattern match for current user
-            if [ "$REAL_USER" == "root" ]; then
+            echo -e "\n${R}💥 BOOM! Sending SIGKILL...${NC}"
+            if [[ "$REAL_USER" == "root" ]]; then
                 pkill -9 -f "zturbo|zmturbo|rsync|fpsync|fpart"
             else
                 pkill -9 -u "$REAL_USER" -f "zturbo|zmturbo|rsync|fpsync|fpart"
             fi
             sleep 1
-            echo "Selesai. Keluar..."
             exit 0
         fi
     fi
     
-    # --- HISTORY MENU ---
     if [[ "${key^^}" == "H" ]]; then
         while true; do
             clear
@@ -230,10 +266,11 @@ while true; do
             echo "--------------------------------------------------------------------------------"
             
             i=1; declare -a r_files
+            shopt -s nullglob
             for f in $(ls -t "$REPORT_DIR"/*.txt 2>/dev/null | head -n 10); do
                 fdate=$(date -r "$f" "+%m-%d %H:%M"); fname=$(basename "$f")
                 fuser_in_file=$(head -n 10 "$f" | grep "USER" | awk '{print $3}')
-                if [ -z "$fuser_in_file" ]; then fuser_in_file=$(echo "$fname" | cut -d'_' -f1); fi
+                if [[ -z "$fuser_in_file" ]]; then fuser_in_file=$(echo "$fname" | cut -d'_' -f1); fi
                 
                 raw_status=$(grep "Final Status:" "$f" | tail -1 | cut -d':' -f2 | xargs)
                 if [[ "$raw_status" == *"SUCCESS"* ]]; then status_fmt="${G}SUCCESS${NC}"
@@ -243,13 +280,14 @@ while true; do
                 printf " [%d] % -16s % -10s % -24b %s\n" "$i" "$fdate" "$fuser_in_file" "$status_fmt" "$fname"
                 r_files[$i]="$f"; ((i++))
             done
-            if [ $i -eq 1 ]; then echo " (No reports found)"; sleep 2; break; fi
+            shopt -u nullglob
+            if [[ $i -eq 1 ]]; then echo " (No reports found)"; sleep 2; break; fi
             
             show_footer "[#] View Report | [B] Back"
             read act
             if [[ "${act^^}" == "B" ]]; then break; fi
             
-            if [[ "$act" =~ ^[0-9]+$ ]] && [ "$act" -ge 1 ] && [ "$act" -lt "$i" ]; then
+            if [[ "$act" =~ ^[0-9]+$ ]] && [[ "$act" -ge 1 ]] && [[ "$act" -lt "$i" ]]; then
                 selected=${r_files[$act]}
                 while true; do
                     clear; echo -e "${C}=== REPORT SUMMARY: $(basename "$selected") ===${NC}"
@@ -265,35 +303,32 @@ while true; do
         done
     fi
     
-    # --- KILL MENU ---
     if [[ "${key^^}" == "K" ]]; then
         while true; do
-            clear; echo -e "${R}>>> KILL MANAGER (ZOMBIE SLAYER) <<<${NC}"
+            clear; echo -e "${R}>>> KILL MANAGER <<<${NC}"
             i=1; declare -a k_pids
-            for f in $DASHBOARD_DIR/*.info; do
-                [ ! -f "$f" ] && continue
+            shopt -s nullglob
+            for f in "$DASHBOARD_DIR"/*.info; do
                 IFS='|' read -r pid owner mode src dest total start_ts < "$f"
-                if [ "$owner" == "$REAL_USER" ] || [ "$EUID" -eq 0 ]; then
+                if [[ "$owner" == "$REAL_USER" ]] || [[ "$EUID" -eq 0 ]]; then
                     echo " [$i] PID: $pid | User: $owner | Dest: $(basename "$dest")"
                     k_pids[$i]="$pid"; ((i++))
                 fi
             done
-            if [ $i -eq 1 ]; then echo " (No jobs available)"; sleep 2; break; fi
+            shopt -u nullglob
+            if [[ $i -eq 1 ]]; then echo " (No active jobs)"; sleep 2; break; fi
             
             show_footer "[#] Stop Job | [B] Back"
             read act
             if [[ "${act^^}" == "B" ]]; then break; fi
             
-            if [[ "$act" =~ ^[0-9]+$ ]] && [ "$act" -ge 1 ] && [ "$act" -lt "$i" ]; then
+            if [[ "$act" =~ ^[0-9]+$ ]] && [[ "$act" -ge 1 ]] && [[ "$act" -lt "$i" ]]; then
                 t_pid=${k_pids[$act]}
                 echo -e "\n${BOLD_RED}WARNING: Terminating Process Group $t_pid.${NC}"
                 read -p "Confirm Kill? (y/n): " confirm
                 if [[ "${confirm^^}" == "Y" ]]; then
-                    echo -e " ${BOLD_YELLOW}NOTE: If process is stuck in 'D' state (IO Wait), it cannot be killed.${NC}"
-                    echo -e " ${BOLD_YELLOW}      You must fix the NFS/Network connection or reboot.${NC}"
-                    # 1. Kill Process Group (Parent & Attached Children)
                     PGID=$(ps -o pgid= -p $t_pid 2>/dev/null | grep -o '[0-9]*')
-                    if [ -n "$PGID" ]; then 
+                    if [[ -n "$PGID" ]]; then 
                         kill -TERM -- -"$PGID" 2>/dev/null
                         sleep 0.5
                         kill -KILL -- -"$PGID" 2>/dev/null
@@ -301,15 +336,10 @@ while true; do
                         pkill -P $t_pid; kill $t_pid
                     fi
                     
-                    # 2. Deep Clean / Zombie Hunter (The fix for "Useless Kill")
-                    # If destination folder is locked by orphans, kill them too.
-                    # Parse dest from info file again to be sure
                     IFS='|' read -r _ _ _ _ t_dest _ _ < "$DASHBOARD_DIR/$t_pid.info"
-                    if [ -n "$t_dest" ] && [ -d "$t_dest" ] && [ "$t_dest" != "/" ]; then
-                         echo -e " ${BOLD_RED}🧹 Deep cleaning (fuser) locked files...${NC}"
+                    if [[ -n "$t_dest" ]] && [[ -d "$t_dest" ]] && [[ "$t_dest" != "/" ]]; then
                          fuser -k -9 -m "$t_dest" >/dev/null 2>&1
                     fi
-
                     rm -f "$DASHBOARD_DIR/"*"${t_pid}.info"
                     sleep 1
                 fi
