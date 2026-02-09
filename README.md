@@ -1,6 +1,6 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3.1%20(Enterprise)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.2%20(Enterprise)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 
@@ -28,6 +28,14 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 *   **👁️ Task-Centric View**: Displays a clear *Source -> Destination* summary for real-time tracking of specific tasks.
 *   **⚡ Anti-Flicker Rendering**: Smooth screen updates using cursor-reset techniques (stable like `htop`).
 *   **📉 Resource Guard**: Real-time monitoring of CPU Load and RAM usage to ensure system stability.
+
+---
+
+## 📝 Changelog
+
+### V1.3.2 (Current)
+*   **🐛 Critical Fix**: Resolved an issue where the transfer process would not start (infinite loop) after confirming with "OK" in the final review screen.
+*   **📦 Logic Update**: Optimized menu loop exit strategy.
 
 ---
 
