@@ -508,82 +508,226 @@ while true; do
         STEP=3
     fi
 
-    if [[ $STEP -eq 3 ]]; then
-        REC_THREADS=$(calc_optimal_threads "$CURRENT_MODE")
-        if [[ -z "$MANUAL_THREADS" ]]; then THREADS=$REC_THREADS; fi
-        
-        if [[ "$CURRENT_MODE" == "SAFE" ]]; then MODE_MSG="${BOLD_GREEN}SAFE${NC}"; else MODE_MSG="${BOLD_RED}TURBO${NC}"; fi
-        
-        if [[ "$SUB_FOLDER" == "." ]]; then 
-            DEST="${DEST_ROOT%/}/"
-        else 
-            DEST="${DEST_ROOT%/}/$SUB_FOLDER"
-            if [[ -d "${SELECTED_PATHS[0]}" ]] || [[ ${#SELECTED_PATHS[@]} -gt 1 ]]; then
-                DEST="$DEST/"
-            fi
-        fi
+            # --- GLOBAL STATE FOR ASYNC CALC ---
 
-        # --- PRE-FLIGHT CHECK (DISK SPACE) ---
-        echo -e "\n${BOLD_YELLOW}⏳ Checking Disk Space...${NC}"
-        TOTAL_SRC_SIZE=0
-        for s in "${SELECTED_PATHS[@]}"; do
-            s_sz=$(du -s "$s" 2>/dev/null | awk '{print $1}') # blocks
-            [ -z "$s_sz" ] && s_sz=0
-            TOTAL_SRC_SIZE=$((TOTAL_SRC_SIZE + s_sz))
+            BG_CALC_PID=""
+
+            NEED_RECALC="true"
+
+        
+
+            if [[ $STEP -eq 3 ]]; then
+
+                while true; do
+
+                    # --- ASYNC PRE-FLIGHT CHECK ---
+
+                    if [[ "$NEED_RECALC" == "true" ]]; then
+
+                        # 1. Kill previous calculation if it's still running
+
+                        if [[ -n "$BG_CALC_PID" ]] && ps -p "$BG_CALC_PID" > /dev/null; then
+
+                            echo ">> Terminating previous calculation process (PID: $BG_CALC_PID)..."
+
+                            pkill -P "$BG_CALC_PID" # Kill children (du, timeout)
+
+                            kill "$BG_CALC_PID" 2>/dev/null
+
+                        fi
+
+        
+
+                        # 2. Start new calculation in the background
+
+                        echo -e "\n${BOLD_YELLOW}⏳ Calculating size in background... (UI is responsive)${NC}"
+
+                        (
+
+                            TEMP_TOTAL_SRC_SIZE=0
+
+                            for s in "${SELECTED_PATHS[@]}"; do
+
+                                s_sz=$(timeout 15 du -s "$s" 2>/dev/null | awk '{print 
+        }')
+
+                                [ -z "$s_sz" ] && s_sz=0
+
+                                TEMP_TOTAL_SRC_SIZE=$((TEMP_TOTAL_SRC_SIZE + s_sz))
+
+                            done
+
+                            echo "$TEMP_TOTAL_SRC_SIZE" > "/tmp/zturbo_sz_res_$"
+
+                        ) &
+
+                        BG_CALC_PID=$!
+
+                        
+
+                        # Reset state
+
+                        NEED_RECALC="false"
+
+                        TOTAL_SRC_SIZE="" # Mark as calculating
+
+                        HR_SRC="Calculating..."
+
+                        SPACE_OK=""
+
+                        SPACE_WARNING=""
+
+                    fi
+
+                    
+
+                    # --- CHECK CALCULATION STATUS (Non-blocking) ---
+
+                    if [[ -n "$BG_CALC_PID" ]] && ! ps -p "$BG_CALC_PID" > /dev/null; then
+
+                        # Finished, grab the result
+
+                        if [[ -f "/tmp/zturbo_sz_res_$" ]]; then
+
+                            TOTAL_SRC_SIZE=$(cat "/tmp/zturbo_sz_res_$")
+
+                            rm -f "/tmp/zturbo_sz_res_$"
+
+                            
+
+                            DEST_FREE=$(df -k "$DEST_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')
+
+                            [ -z "$DEST_FREE" ] && DEST_FREE=0
+
+        
+
+                            HR_SRC=$(numfmt --to=iec --from-unit=1K $TOTAL_SRC_SIZE)
+
+                            HR_FREE=$(numfmt --to=iec --from-unit=1K $DEST_FREE)
+
+        
+
+                            if [[ "$DEST_FREE" -lt "$TOTAL_SRC_SIZE" ]]; then
+
+                                SPACE_WARNING="${BOLD_RED}⚠️ WARNING: INSUFFICIENT DISK SPACE!${NC}"
+
+                            else
+
+                                SPACE_OK="${BOLD_GREEN}✅ Disk Space OK${NC}"
+
+                            fi
+
+                        fi
+
+                        BG_CALC_PID="" # Clear PID, calculation is done
+
+                    fi
+
+        
+
+                    REC_THREADS=$(calc_optimal_threads "$CURRENT_MODE")
+
+                    if [[ -z "$MANUAL_THREADS" ]]; then THREADS=$REC_THREADS; fi
+
+                    if [[ "$CURRENT_MODE" == "SAFE" ]]; then MODE_MSG="${BOLD_GREEN}SAFE${NC}"; else MODE_MSG="${BOLD_RED}TURBO${NC}"; fi
+
+                    
+
+                    if [[ "$SUB_FOLDER" == "." ]]; then DEST="${DEST_ROOT%/}/"
+
+                    else DEST="${DEST_ROOT%/}/$SUB_FOLDER"; fi
+
+                    
+
+                    print_header
+
+                    echo -e "${BOLD_YELLOW}[ FINAL CONFIRMATION ]${NC}"
+
+                    echo -e " [1] SOURCE  : ${BOLD_WHITE}${SELECTED_PATHS[0]}${NC} $([ ${#SELECTED_PATHS[@]} -gt 1 ] && echo "(and $(( ${#SELECTED_PATHS[@]} - 1 )) others)")"
+
+                    echo -e " [2] DEST    : $DEST_ROOT"
+
+                    echo -e " [3] FOLDER  : $SUB_FOLDER"
+
+                    echo -e " [4] THREADS : ${BOLD_WHITE}$THREADS${NC} (Rec: $REC_THREADS) $MODE_MSG"
+
+                    echo -e " [5] MODE    : $CURRENT_MODE"
+
+                    echo -e "------------------------------------------"
+
+                    echo -e " [i] STORAGE : Source: ${BOLD_CYAN}$HR_SRC${NC} | Dest Free: ${BOLD_CYAN}$HR_FREE${NC}"
+
+                    if [[ -n "$SPACE_WARNING" ]]; then echo -e "             $SPACE_WARNING"; fi
+
+                    if [[ -n "$SPACE_OK" ]]; then echo -e "             $SPACE_OK"; fi
+
+                    echo -e "------------------------------------------"
+
+                    echo -e " TARGET      : ${BOLD_GREEN}$DEST${NC}"
+
+                    echo -e "------------------------------------------"
+
+                    echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
+
+                    show_footer "Type 'OK' | [1-5] Edit | [MK] Create Folder | [B] Back"
+
+        
+
+                    # Non-blocking read with 1s timeout to keep UI live
+
+                    read -t 1 -e k || true
+
+                    
+
+                    if [[ -z "$k" ]]; then continue; fi # Timeout, loop again
+
+        
+
+                    if [[ "$k" == "OK" ]]; then
+
+                        if [[ -n "$BG_CALC_PID" ]]; then
+
+                            echo "Please wait for size calculation to finish before starting."
+
+                            sleep 2
+
+                            continue
+
+                        fi
+
+                        break
+
+                    fi
+
+        
+
+                    case "${k^^}" in
+
+                        Q) if [[ -n "$BG_CALC_PID" ]]; then kill "$BG_CALC_PID"; fi; exit 0 ;;
+
+                        B) if [[ -n "$BG_CALC_PID" ]]; then kill "$BG_CALC_PID"; fi; STEP=2; break ;; 
+
+                        MK) read -e -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub"; NEED_RECALC="true" ;; 
+
+                        1) select_source; NEED_RECALC="true" ;; 
+
+                        2) select_dest; NEED_RECALC="true" ;; 
+
+                        3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 
+
+                        4) read -e -p " Set Threads manually: " MANUAL_THREADS || exit 1 ;; 
+
+                        5) [[ "$CURRENT_MODE" == "SAFE" ]] && CURRENT_MODE="TURBO" || CURRENT_MODE="SAFE" ;; 
+
+                    esac
+
+                done
+
+                if [[ $STEP -ne 3 ]]; then continue; fi
+
+            fi
+
         done
-        
-        # Get Dest Free Space (in 1K blocks to match du default)
-        DEST_FREE=$(df -k "$DEST_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')
-        [ -z "$DEST_FREE" ] && DEST_FREE=0
-        
-        # Format Sizes
-        HR_SRC=$(numfmt --to=iec --from-unit=1K $TOTAL_SRC_SIZE)
-        HR_FREE=$(numfmt --to=iec --from-unit=1K $DEST_FREE)
-        
-        SPACE_WARNING=""
-        if [[ "$DEST_FREE" -lt "$TOTAL_SRC_SIZE" ]]; then
-            SPACE_WARNING="${BOLD_RED}⚠️  WARNING: INSUFFICIENT DISK SPACE!${NC}"
-        else
-            SPACE_OK="${BOLD_GREEN}✅ Disk Space OK${NC}"
-        fi
-        
-        print_header
-        echo -e "${BOLD_YELLOW}[ FINAL CONFIRMATION ]${NC}"
-        echo -e " [1] SOURCE  : ${BOLD_WHITE}${SELECTED_PATHS[0]}${NC} $([ ${#SELECTED_PATHS[@]} -gt 1 ] && echo "(and $(( ${#SELECTED_PATHS[@]} - 1 )) others)")"
-        echo -e " [2] DEST    : $DEST_ROOT"
-        echo -e " [3] FOLDER  : $SUB_FOLDER"
-        echo -e " [4] THREADS : ${BOLD_WHITE}$THREADS${NC} (Rec: $REC_THREADS) $MODE_MSG"
-        echo -e " [5] MODE    : $CURRENT_MODE"
-        echo -e "------------------------------------------"
-        echo -e " [i] STORAGE : Source: ${BOLD_CYAN}$HR_SRC${NC} | Dest Free: ${BOLD_CYAN}$HR_FREE${NC}"
-        if [[ -n "$SPACE_WARNING" ]]; then
-            echo -e "             $SPACE_WARNING"
-        fi
-        echo -e "------------------------------------------"
-        echo -e " TARGET      : ${BOLD_GREEN}$DEST${NC}"
-        echo -e "------------------------------------------"
-        echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
-        show_footer "Type 'OK' | [1-5] Edit | [MK] Create Folder | [B] Back"
-        read -e k || exit 1
-        
-        if [[ "$k" == "OK" ]]; then break; fi
-        case "${k^^}" in
-            Q) exit 0 ;; B) STEP=2; continue ;; 
-            MK) read -e -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub" ;; 
-            1) select_source ;; 
-            2) select_dest ;; 
-            3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 
-            4) 
-                read -e -p " Set Threads manually: " MANUAL_THREADS || exit 1
-                if [[ "$MANUAL_THREADS" =~ ^[0-9]+$ ]]; then THREADS=$MANUAL_THREADS; else MANUAL_THREADS=""; fi 
-            ;; 
-            5) 
-                [[ "$CURRENT_MODE" == "SAFE" ]] && CURRENT_MODE="TURBO" || CURRENT_MODE="SAFE"
-                if [[ -z "$MANUAL_THREADS" ]]; then THREADS=$(calc_optimal_threads "$CURRENT_MODE"); fi
-            ;; 
-        esac
-    fi
-done
 
 # --- EXECUTION ---
 print_header
@@ -608,22 +752,35 @@ echo "================================================================" >> "$REP
 if [[ ${#SELECTED_PATHS[@]} -gt 1 ]]; then MON_SRC="${SELECTED_PATHS[0]}..++"; else MON_SRC="${SELECTED_PATHS[0]}"; fi
 MON_START_TIME=$(date +%s)
 
-# Initial Monitor File
+# Initial Monitor File with Status 'CALC' temporarily
 echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|CALC|$MON_START_TIME" > "$MONITOR_FILE"
 chmod 666 "$MONITOR_FILE" 2>/dev/null
 
-echo ">> Calculating Source Metadata..."
-(
-    CALC_BYTES=0
-    for s in "${SELECTED_PATHS[@]}"; do
-        sb=$(du -sb "$s" 2>/dev/null | cut -f1)
-        [ -z "$sb" ] && sb=0
-        CALC_BYTES=$((CALC_BYTES + sb))
-    done
+# --- OPTIMIZED METADATA HANDOVER ---
+# If we already calculated size in STEP 3, reuse it!
+if [[ -n "$TOTAL_SRC_SIZE" ]] && [[ "$TOTAL_SRC_SIZE" -gt 0 ]]; then
+    echo ">> Using cached source metadata ($HR_SRC)..."
+    # Convert 1K blocks (du -s) to Bytes for accurate progress
+    # 1 block = 1024 bytes
+    CALC_BYTES=$(awk -v b="$TOTAL_SRC_SIZE" 'BEGIN {print b * 1024}')
+    
     echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$CALC_BYTES|$MON_START_TIME" > "$MONITOR_FILE"
     echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
-) &
-PID_CALC=$!
+    PID_CALC="" # No background calc needed
+else
+    echo ">> Calculating Source Metadata (Background)..."
+    (
+        CALC_BYTES=0
+        for s in "${SELECTED_PATHS[@]}"; do
+            sb=$(du -sb "$s" 2>/dev/null | cut -f1)
+            [ -z "$sb" ] && sb=0
+            CALC_BYTES=$((CALC_BYTES + sb))
+        done
+        echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$CALC_BYTES|$MON_START_TIME" > "$MONITOR_FILE"
+        echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
+    ) &
+    PID_CALC=$!
+fi
 
 # --- ROBUST WRAPPERS ---
 # Retry logic prevents failures on network glitches (Router Safety)
@@ -741,7 +898,8 @@ else
 fi
 
 JOB_COMPLETED=true
-wait $PID_CALC
+if [[ -n "$PID_CALC" ]]; then wait $PID_CALC; fi
+
 if [[ -f "/tmp/zturbo_size_$$" ]]; then
     SRC_BYTES=$(cat "/tmp/zturbo_size_$$")
     rm -f "/tmp/zturbo_size_$$"
