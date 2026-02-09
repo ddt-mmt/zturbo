@@ -15,7 +15,8 @@ REFRESH_RATE=2
 if [[ -n "$SUDO_USER" ]]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
 
 G='\033[1;32m'; Y='\033[1;33m'; R='\033[1;31m'; C='\033[1;36m'; W='\033[1;37m'; NC='\033[0m'; GREY='\033[0;90m'
-trap 'echo -e "\n${R}Exiting Monitor...${NC}"; exit 0' SIGINT
+K='\033[K' # Clear to end of line
+trap 'echo -e "\n${R}Exiting Monitor...${NC}"; printf "\033[?25h"; exit 0' SIGINT
 
 ALL_BLOCK="████████████████████" # 20 chars
 ALL_EMPTY="░░░░░░░░░░░░░░░░░░░░"
@@ -34,6 +35,7 @@ fmt_size() {
     local v=$1
     if [[ $v -ge 1073741824 ]]; then awk -v v=$v 'BEGIN{printf "%.1fG", v/1073741824}'
     elif [[ $v -ge 1048576 ]]; then awk -v v=$v 'BEGIN{printf "%.1fM", v/1048576}'
+    elif [[ $v -ge 1024 ]]; then awk -v v=$v 'BEGIN{printf "%.1fK", v/1024}'
     else echo "${v}B"; fi
 }
 
@@ -45,19 +47,46 @@ fmt_time() {
 }
 
 show_footer() {
-    echo -e "\n${C}-----------------------------------------------------------------------------------------------${NC}"
-    echo -e "$1"
-    echo -e "${C}-----------------------------------------------------------------------------------------------${NC}"
+    echo -e "${K}"
+    echo -e "${C}-----------------------------------------------------------------------------------------------${NC}${K}"
+    echo -e "$1${K}"
+    echo -e "${C}-----------------------------------------------------------------------------------------------${NC}${K}"
+    printf "\033[?25h" # Show Cursor for Input
     echo -n " 👉 INPUT > "
 }
 
 declare -A PREV_SIZE
 declare -A PREV_TIME
 
+# Network Stats Init
+RX_PREV=0; TX_PREV=0; TIME_PREV=0
+
 while true; do
-    printf "\033[2J\033[H"
+    printf "\033[?25l\033[H" # Hide Cursor + Move to top
     MY_IP=$(hostname -I | awk '{print $1}')
     
+    # Network Speed Calculation
+    IFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
+    [[ -z "$IFACE" ]] && IFACE=$(awk -F: '$2 > 0 {print $1; exit}' /proc/net/dev | xargs)
+    if [[ -n "$IFACE" ]]; then
+        read RX_NOW TX_NOW < <(awk -v iface="$IFACE:" '$1 == iface {print $2, $10}' /proc/net/dev)
+        NOW_TS_NET=$(date +%s%N)
+        if [[ $TIME_PREV -gt 0 ]]; then
+            # Nano seconds for better precision or just simple seconds
+            # Using simple seconds from date +%s is easier for bash math
+            NOW_SEC=$(date +%s); PREV_SEC=${TIME_PREV::-9}
+            DELTA_T=$((NOW_SEC - PREV_SEC)); [[ $DELTA_T -eq 0 ]] && DELTA_T=1
+            
+            RX_SPD=$(( (RX_NOW - RX_PREV) / DELTA_T ))
+            TX_SPD=$(( (TX_NOW - TX_PREV) / DELTA_T ))
+            
+            RX_FMT="$(fmt_size $RX_SPD)/s"; TX_FMT="$(fmt_size $TX_SPD)/s"
+        else
+            RX_FMT=".../s"; TX_FMT=".../s"
+        fi
+        RX_PREV=$RX_NOW; TX_PREV=$TX_NOW; TIME_PREV=$NOW_TS_NET
+    fi
+
     if [[ -r /proc/loadavg ]]; then read LOAD _ < /proc/loadavg
     else LOAD=$(LC_ALL=C uptime | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | xargs); fi
     
@@ -73,24 +102,36 @@ while true; do
     MEM_GUARD=$(( MEM_TOT * 20 / 100 )); MEM_SAFE=$(( MEM_TOT * 80 / 100 ))
     MAX_THREADS_SAFE=$(( MEM_SAFE / 60 )); [ $MAX_THREADS_SAFE -lt 2 ] && MAX_THREADS_SAFE=2
 
-    echo -e "${C}=== ZMTURBO V1.3.1 (OPTIMIZED): MONITORING CENTER ===${NC}"
-    echo -e "HOST : ${W}$(hostname)${NC} | IP: ${Y}$MY_IP${NC} | USER: ${Y}$REAL_USER${NC}"
-    echo -e "STATS: CPU Load: ${W}$LOAD${NC} | RAM: ${MEM_COL}${MEM_USED}MB (${MEM_PERC}%)${NC} | IO: ${IO_COL}${IOWAIT}%${NC}"
-    echo -e "LIMIT: Max Threads: ${G}$MAX_THREADS_SAFE${NC} | OS Guard: ${Y}${MEM_GUARD}MB${NC}"
+    echo -e "${C}=== ZMTURBO V1.3.1 (OPTIMIZED): MONITORING CENTER ===${NC}${K}"
+    echo -e "HOST : ${W}$(hostname)${NC} | IP: ${Y}$MY_IP${NC} ($IFACE) | USER: ${Y}$REAL_USER${NC}${K}"
+    echo -e "STATS: CPU: ${W}$LOAD${NC} | RAM: ${MEM_COL}${MEM_PERC}%${NC} | IO: ${IO_COL}${IOWAIT}%${NC} | NET: ${G}⬇$RX_FMT ⬆$TX_FMT${NC}${K}"
+    echo -e "LIMIT: Max Threads: ${G}$MAX_THREADS_SAFE${NC} | OS Guard: ${Y}${MEM_GUARD}MB${NC}${K}"
     
-    echo -e "\n${Y}[ A. ACTIVE TRANSFERS ]${NC}"
-    printf "% -7s % -8s % -6s % -12s % -12s % -26s %s\n" "PID" "USER" "CPU%" "SPEED" "ETA" "PROGRESS" "TASK (Source -> Dest)"
-    echo "-----------------------------------------------------------------------------------------------"
+    echo -e "${K}\n${Y}[ A. ACTIVE TRANSFERS ]${NC}${K}"
+    printf "% -7s % -8s % -6s % -5s % -12s % -12s % -26s${K}\n" "PID" "USER" "CPU%" "THRD" "SPEED" "ETA" "PROGRESS"
+    echo -e "-----------------------------------------------------------------------------------------------${K}"
     count=0
     NOW_TS=$(date +%s)
+    declare -A UNIQUE_TASKS
 
     shopt -s nullglob
     for f in "$DASHBOARD_DIR"/*.info; do
         if [[ -f "$f" ]]; then
             IFS='|' read -r pid owner mode src dest total start_ts < "$f"
             if ps -p $pid > /dev/null; then
-                pgid=$(ps -o pgid= -p $pid 2>/dev/null | xargs)
-                [[ -n "$pgid" ]] && cpu_usage=$(ps --no-headers -g $pgid -o %cpu 2>/dev/null | awk '{cpu+=$1} END {printf "%.1f", cpu}') || cpu_usage="0.0"
+                # Robust Process Counting & CPU Sum
+                # Get list of all related PIDs (Parent + Children)
+                all_pids="$pid"
+                children_list=$(pgrep -P $pid)
+                if [[ -n "$children_list" ]]; then
+                    all_pids="$all_pids $children_list"
+                    proc_count=$(( $(echo "$children_list" | wc -w) + 1 ))
+                else
+                    proc_count=1
+                fi
+                
+                # Calculate CPU Sum for these specific PIDs
+                cpu_usage=$(ps -p $all_pids -o %cpu --no-headers 2>/dev/null | awk '{sum+=$1} END {if (sum=="") print "0.0"; else printf "%.1f", sum}')
 
                 CACHE_FILE="/tmp/zmturbo_cache_$pid"
                 curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
@@ -115,26 +156,44 @@ while true; do
                     PERC_TXT="${perc}%"; BAR=$(draw_bar $perc)
                 fi
                 
-                s_base=$(basename "$src"); d_base=$(basename "$dest"); task_str="$s_base -> $d_base"
-                [[ ${#task_str} -gt 40 ]] && task_str="${task_str:0:18}..${task_str: -18}"
                 [[ "$owner" == "$REAL_USER" ]] && CL=$G || CL=$W
                 
-                printf "${CL}%-7s %-8s %-6s %-12s %-12s %-26s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT" "$task_str"
+                printf "${CL}%-7s %-8s %-6s %-5s %-12s %-12s %-26s${NC}${K}\n" "$pid" "$owner" "$cpu_usage" "$proc_count" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT"
+                
+                UNIQUE_TASKS["$src -> $dest"]=1
                 ((count++))
             else rm -f "$f" "/tmp/zmturbo_cache_$pid" 2>/dev/null; fi
         fi
     done
-    [[ $count -eq 0 ]] && echo -e " ${R}(No active transfers found)${NC}"
+    [[ $count -eq 0 ]] && echo -e " ${R}(No active transfers found)${NC}${K}"
 
-    echo -e "\n${Y}[ B. STORAGE STATUS ]${NC}"
-    echo "-----------------------------------------------------------------------------------------------"
-    printf "% -20s % -9s % -9s %s\n" "MOUNT POINT" "SIZE" "FREE" "SOURCE DEVICE"
+    if [[ ${#UNIQUE_TASKS[@]} -gt 0 ]]; then
+        echo -e "${K}\n${Y}[ B. ACTIVE TASK PATHS ]${NC}${K}"
+        for task in "${!UNIQUE_TASKS[@]}"; do
+            echo -e "${GREY} ● $task${NC}${K}"
+        done
+    fi
+
+    echo -e "${K}\n${Y}[ C. STORAGE STATUS ]${NC}${K}"
+    echo -e "-----------------------------------------------------------------------------------------------${K}"
+    printf "% -20s % -9s % -9s %s${K}\n" "MOUNT POINT" "SIZE" "FREE" "SOURCE DEVICE"
     df -h | grep -E "gpfs|/mnt|/media" | head -n 5 | while read line; do
-        printf "% -20s % -9s % -9s ${GREY}%s${NC}\n" $(echo "$line" | awk '{print $6, $2, $4, $1}')
+        printf "% -20s % -9s % -9s ${GREY}%s${NC}${K}\n" $(echo "$line" | awk '{print $6, $2, $4, $1}')
     done
     
+    printf "\033[J" # Clear rest of screen
     show_footer "[R] Refresh | [K] Kill Menu | [E] Panic Cleanup | [H] History | [Q] Quit"
-    read -t $REFRESH_RATE -n 1 -s key
+    
+    # Smart Wait (Responsive Input)
+    # Checks for input every 0.1s up to REFRESH_RATE
+    # Keeps cursor stable at bottom while waiting
+    loops=$(( REFRESH_RATE * 10 ))
+    key=""
+    for (( i=0; i<loops; i++ )); do
+        read -t 0.1 -n 1 -s key
+        if [[ -n "$key" ]]; then break; fi
+    done
+
     [[ "${key^^}" == "Q" ]] && exit 0
     if [[ "${key^^}" == "E" ]]; then
         clear; echo -e "${R}>>> EMERGENCY SYSTEM PURGE <<<${NC}"
