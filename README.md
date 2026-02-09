@@ -137,5 +137,4 @@ Dilisensikan di bawah **MIT License**.
 *   **Original Idea & Concept**: [ddt-mmt](https://github.com/ddt-mmt)
 *   **Developer**: [ddt-mmt](https://github.com/ddt-mmt)
 
-Dibuat dengan ❤️ untuk komunitas SysAdmin & Network Engineer.
 
