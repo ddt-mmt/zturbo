@@ -1,135 +1,88 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3.1%20(Polished)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.1%20(Enterprise)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 
-**ZTURBO** adalah toolkit *Command Line Interface (CLI)* kelas Enterprise yang dirancang untuk migrasi data skala besar (Big Data) pada infrastruktur High-Performance (seperti Router Mikrotik CCR1072, Server 10G/40G).
+**ZTURBO** is an enterprise-grade Command Line Interface (CLI) toolkit designed for large-scale data migration (Big Data) on high-performance infrastructure, such as Mikrotik CCR1072 routers and 10G/40G server environments.
 
-Toolkit ini menggabungkan keandalan `rsync` dengan kecepatan `fpsync` dalam arsitektur *Hybrid Parallelism*, dibungkus dengan antarmuka modern dan mekanisme keamanan berlapis.
+This toolkit leverages the reliability of `rsync` and the speed of `fpsync` within a *Hybrid Parallelism* architecture, providing a modern interface with multi-layered security mechanisms.
 
 ---
 
-## 🔥 Fitur Utama (V1.3.1)
+## 🔥 Key Features (V1.3.1 Enterprise)
 
-### 1. Robust & Resilient (Anti-Gagal)
-*   **🛡️ Auto-Retry Mechanism**: Otomatis mencoba ulang (3x) jika terjadi *packet loss* atau gangguan jaringan sesaat.
-*   **⏱️ Smart Timeout**: Mendeteksi koneksi "zombie" dan meresetnya otomatis untuk mencegah beban pada Router.
-*   **💾 Pre-Flight Check**: Menghitung sisa ruang disk tujuan sebelum transfer dimulai untuk mencegah *disk full error*.
-*   **⌨️ Smart Input**: Mendukung navigasi keyboard penuh (Backspace, Arrow keys) di semua menu interaktif.
+### 1. Robust & Resilient
+*   **🛡️ Auto-Retry Mechanism**: Automatically retries transfers (up to 3 times) in case of packet loss or transient network interruptions.
+*   **⏱️ Smart Timeout**: Detects "zombie" connections and resets them automatically to prevent resource exhaustion on network routers.
+*   **💾 Pre-Flight Check**: Calculates source data size against destination disk availability before execution to prevent "Disk Full" errors.
+*   **⌨️ Smart Input**: Full *Readline* support (Backspace/Arrow keys) in all interactive menus for a seamless user experience.
 
 ### 2. Hybrid Parallel Engine
-*   **🚀 Files**: Dijalankan secara **Paralel (Background)**. Memenuhi bandwidth jaringan secara instan.
-*   **📂 Folders**: Dijalankan dengan `fpsync` (Multi-thread partisi).
-*   **🏎️ Optimized Flags**: Mendukung `--sparse` (untuk VM image), `-W` (Whole File), dan `--inplace` untuk kecepatan maksimal.
+*   **🚀 File Parallelism**: Executes individual files in the **background (Parallel)** to saturate network bandwidth instantly.
+*   **📂 Folder Partitioning**: Utilizes `fpsync` for multi-threaded folder synchronization.
+*   **🏎️ Optimized Flags**: Pre-configured with `--sparse` (optimized for VM images), `-W` (Whole-File mode), and `--inplace` for maximum throughput.
 
-### 3. Modern Monitoring (ZMTURBO)
-*   **📊 Unicode Dashboard**: Tampilan progress bar modern (Solid Blocks) yang elegan.
-*   **👁️ Task Focus**: Menampilkan ringkasan *Source -> Dest* untuk pelacakan transfer yang lebih jelas.
-*   **⚡ Anti-Flicker**: Rendering layar yang halus tanpa kedip (stabil seperti `htop`).
-*   **📉 Resource Guard**: Memantau CPU Load & RAM secara *real-time* untuk mencegah server hang.
+### 3. Advanced Monitoring (ZMTURBO)
+*   **📊 Unicode Dashboard**: Elegant, modern progress bars using solid Unicode blocks.
+*   **👁️ Task-Centric View**: Displays a clear *Source -> Destination* summary for real-time tracking of specific tasks.
+*   **⚡ Anti-Flicker Rendering**: Smooth screen updates using cursor-reset techniques (stable like `htop`).
+*   **📉 Resource Guard**: Real-time monitoring of CPU Load and RAM usage to ensure system stability.
 
 ---
 
-## 🆚 Mode Operasi: Kapan Pakai Apa?
+## 🆚 Operational Modes
 
-ZTURBO memiliki dua "kepribadian" yang bisa dipilih sesuai situasi:
+ZTURBO offers two distinct modes tailored for different operational requirements:
 
-| Fitur | 🛡️ MODE SAFE (Default) | 🚀 MODE TURBO |
+| Feature | 🛡️ SAFE MODE (Default) | 🚀 TURBO MODE |
 | :--- | :--- | :--- |
-| **Filosofi** | "Lambat asal Selamat & Sopan" | "Gas Pol Rem Blong" |
-| **Kecepatan** | Sequential (Satu per satu) | Hybrid Parallel (Multi-Thread) |
-| **Prioritas** | Low Priority (`nice`/`ionice`) | High Priority (Max Resource) |
-| **Metode Tulis** | Atomic (File Temp -> Rename) | In-Place (Langsung Tulis) |
-| **CPU Usage** | Rendah (Hitung Delta/Perbedaan) | Rendah (Whole File Streaming) |
-| **Cocok Untuk** | **Jam Kerja**, Sync Harian, Koneksi Lambat | **Migrasi Awal**, Akhir Pekan, Network 10G+ |
-| **Resume** | Supported (via Partial Dir) | Supported (via In-Place Check) |
+| **Philosophy** | "Reliability & System Stability" | "Maximum Performance" |
+| **Execution** | Sequential (One by one) | Hybrid Parallel (Multi-Threaded) |
+| **Priority** | Low Priority (`nice`/`ionice`) | High Priority (Max Resources) |
+| **Write Method** | Atomic (Temp File -> Rename) | In-Place (Direct Write) |
+| **CPU Usage** | Moderate (Delta/Checksum calculation) | Low (Whole-File Streaming) |
+| **Best For** | **Business Hours**, Daily Syncs | **Initial Migration**, Maintenance Windows |
+| **Resume** | Supported (via Partial Directory) | Supported (via In-Place Verification) |
 
 ---
 
-## 📦 Instalasi
+## 📦 Installation
 
-1.  **Clone Repository**
+1.  **Clone the Repository**
     ```bash
     git clone https://github.com/ddt-mmt/zturbo.git
     cd zturbo
     ```
 
-2.  **Jalankan Installer (Universal)**
+2.  **Universal Installer**
     ```bash
     chmod +x install.sh
     sudo ./install.sh
     ```
-    *Support: Ubuntu, Debian, CentOS, RHEL, Fedora, Arch Linux.*
-    *Script otomatis mendeteksi OS dan menginstall dependency yang sesuai.*
+    *The script automatically detects your OS (Ubuntu, CentOS, RHEL, Fedora, Arch) and installs required dependencies (`rsync`, `fpart`).*
 
-### Alternatif: Install via Paket .DEB (Debian/Ubuntu)
-Jika Anda ingin instalasi bersih via package manager:
+### Alternative: Install via .DEB Package
+For Debian/Ubuntu-based systems:
 ```bash
-# File output ada di folder dist/
-sudo dpkg -i zturbo.deb
-
-# Jika ada error dependency:
-sudo apt-get install -f
+sudo dpkg -i dist/zturbo.deb
 ```
-Metode ini memastikan `rsync` dan `fpart` ikut terinstall otomatis.
 
 ---
 
-## 🚀 Cara Penggunaan
+## 🚀 Getting Started
 
-### 1. Memulai Transfer (ZTURBO)
-Cukup ketik `zturbo` di terminal. Wizard interaktif akan memandu Anda:
-
+### 1. Running Transfers (ZTURBO)
+Launch the interactive wizard by typing:
 ```bash
 zturbo
 ```
 
-**Fitur Baru di Wizard:**
-*   **Rich Browser**: Menampilkan ukuran file/folder secara langsung.
-*   **Storage Info**: Menampilkan total ukuran data vs sisa disk tujuan.
-*   **Smart Selection**: Bisa memilih multiple file & folder sekaligus.
-
-### 2. Monitoring (ZMTURBO)
-Buka terminal baru dan ketik:
-
+### 2. Real-time Monitoring (ZMTURBO)
+Open a new terminal session and type:
 ```bash
 zmturbo
 ```
-
-**Tampilan Dashboard V1.3.1:**
-```text
-=== ZMTURBO V1.3 (OPTIMIZED): MONITORING CENTER ===
-HOST : server-prod-01 | IP: 10.10.1.5 | USER: root
-STATS: CPU Load: 1.25 | RAM: 4500MB (15%) | IO: 0%
-
-[ A. ACTIVE TRANSFERS ]
-PID     USER     CPU%   SPEED        ETA          PROGRESS                     TASK (Source -> Dest)
---------------------------------------------------------------------------------------------------
-8821    root     12.5   145.2MB/s    02m10s       ██████████░░░░░░░░░░ 50%     big_vm.qcow2 -> backup_san
-9012    admin    5.0    40.5MB/s     05m00s       ████░░░░░░░░░░░░░░░░ 20%     web_data -> /mnt/nas01
---------------------------------------------------------------------------------------------------
-```
-
----
-
-## 🔧 Troubleshooting
-
-*   **Peringatan "Dependencies Missing"**:
-    Pastikan `rsync` dan `fpart` terinstall.
-    ```bash
-    apt install rsync fpart   # Debian/Ubuntu
-    yum install rsync fpart   # CentOS/RHEL
-    ```
-
-*   **Server Terasa Berat**:
-    Jika menggunakan Mode TURBO pada HDD biasa (bukan SSD), kurangi jumlah thread di menu konfirmasi (Opsi `[4]`) menjadi 4-8 thread.
-
----
-
-## 🤝 Kontribusi & Lisensi
-
-Dilisensikan di bawah **MIT License**.
 
 ---
 
@@ -137,4 +90,5 @@ Dilisensikan di bawah **MIT License**.
 *   **Original Idea & Concept**: [ddt-mmt](https://github.com/ddt-mmt)
 *   **Developer**: [ddt-mmt](https://github.com/ddt-mmt)
 
-
+## 🤝 License
+Licensed under the **MIT License**.

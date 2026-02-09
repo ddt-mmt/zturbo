@@ -153,18 +153,14 @@ declare -a SELECTED_PATHS
 
 # --- 1. SOURCE MODULE (PAGINATED) ---
 select_source() {
-    # Reset selection if empty
-    # (Optional: keep selection between back/forth steps? For now reset on entry if empty)
-    # SELECTED_MAP is global so we preserve it if user goes Back then Next
-    
     while true; do
         print_header
         echo -e "${BOLD_YELLOW}[ STEP 1 ] SELECT SOURCE LOCATION${NC}"
         
         # Mounts listing
         mapfile -t mounts < <(mount | grep -E "type cifs|type nfs|type gpfs|type smb|on /mnt|on /media" | awk '{print $3 "|" $1}')
-        echo -e " [0] 🏠 HOME DIR ($HOME)"
-        echo -e " [1] 🌳 ROOT DIR (/)"
+        echo -e " [0] 🏠 HOME DIRECTORY ($HOME)"
+        echo -e " [1] 🌳 ROOT DIRECTORY (/)"
         i=2
         for line in "${mounts[@]}"; do
             path=$(echo "$line" | cut -d'|' -f1)
@@ -180,52 +176,42 @@ select_source() {
         if [[ "${pil^^}" == "R" ]]; then continue; fi
         
         if [[ "$pil" == "0" ]]; then NAV_PATH="$HOME"
-elif [[ "$pil" == "1" ]]; then NAV_PATH="/"
-elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then
-     idx=$((pil-2))
-     l="${mounts[$idx]}"
-     NAV_PATH=$(echo "$l" | cut -d'|' -f1)
-else 
-     echo "Invalid!"; sleep 1; continue
-fi
+        elif [[ "$pil" == "1" ]]; then NAV_PATH="/"
+        elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then
+             idx=$((pil-2)); l="${mounts[$idx]}"; NAV_PATH=$(echo "$l" | cut -d'|' -f1)
+        else 
+             echo "Invalid Choice!"; sleep 1; continue
+        fi
 
         MOUNT_ROOT="$NAV_PATH"
-        BREAK_SRC=false
-        PAGE=1
-        PER_PAGE=15
+        BREAK_SRC=false; PAGE=1; PER_PAGE=15
         
         while true; do
             print_header
             echo -e "${BOLD_YELLOW}[ BROWSE SOURCE ]${NC} ${BOLD_WHITE}$NAV_PATH${NC}"
             
-            # Count selected
             SEL_COUNT=${#SELECTED_MAP[@]}
             if [[ $SEL_COUNT -gt 0 ]]; then
-                echo -e "${BOLD_GREEN}✅ Selected Items: $SEL_COUNT${NC} (Type 'D' to Finish)"
+                echo -e "${BOLD_GREEN}✅ Selected Items: $SEL_COUNT${NC} (Type 'D' to Finalize)"
             else
                 echo -e "${GREY}   No items selected yet.${NC}"
             fi
 
-            # Load contents
-            # Using ls -1 -A --group-directories-first is okay for interactive UI
             mapfile -t contents < <(\ls -1 -A --group-directories-first --color=never "$NAV_PATH" 2>/dev/null)
             total_items=${#contents[@]}
             
-            # Pagination Logic
             total_pages=$(( (total_items + PER_PAGE - 1) / PER_PAGE ))
             [ $total_pages -eq 0 ] && total_pages=1
             [ $PAGE -gt $total_pages ] && PAGE=$total_pages
             [ $PAGE -lt 1 ] && PAGE=1
-            
             start_idx=$(( (PAGE - 1) * PER_PAGE ))
             
             echo -e " ----------------------------------------"
-            echo -e " PAGE $PAGE of $total_pages | Items: $total_items"
+            echo -e " PAGE $PAGE of $total_pages | Total Items: $total_items"
             echo -e " ----------------------------------------"
             
-            # Special Item: Select Current Folder
             if [[ "$PAGE" -eq 1 ]]; then
-                 echo -e " [0] ✅ DONE / SELECT CURRENT FOLDER ALL"
+                 echo -e " [0] ✅ DONE / SELECT CURRENT FOLDER"
             fi
 
             display_count=1
@@ -265,9 +251,9 @@ fi
             NAV_MENU=""
             if [[ $PAGE -lt $total_pages ]]; then NAV_MENU+="[N] Next | "; fi
             if [[ $PAGE -gt 1 ]]; then NAV_MENU+="[P] Prev | "; fi
-            if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up (..)"; fi
+            if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Main Menu"; else BACK_MSG="Up (..)"; fi
             
-            show_footer "${NAV_MENU}[#] Enter/Toggle | [S #] Folder Select | [A] All | [C] Clear | [D] Done | [B] $BACK_MSG"
+            show_footer "${NAV_MENU}[#] Enter/Toggle | [S #] Select Folder | [A] All | [C] Clear | [D] Done | [B] $BACK_MSG"
             read -e inp || exit 1
             
             INP_UP="${inp^^}"
@@ -296,7 +282,7 @@ fi
             
             # Select All in View (or All in Folder? Lets do All in Folder for convenience)
             if [[ "$INP_UP" == "A" ]]; then
-                 echo "Selecting all items in this folder..."
+                 echo "Selecting all items..."
                  for item in "${contents[@]}"; do
                     full_p="${NAV_PATH%/}/$item"
                     SELECTED_MAP["$full_p"]=1
@@ -375,7 +361,7 @@ select_dest() {
         # Brief Summary
         count=${#SELECTED_PATHS[@]}
         if [[ $count -gt 0 ]]; then
-             echo -e "Source: ${BOLD_CYAN}${SELECTED_PATHS[0]}${NC} $([ $count -gt 1 ] && echo "+ $((count-1)) others")"
+             echo -e "Source: ${BOLD_CYAN}${SELECTED_PATHS[0]}${NC} $([ $count -gt 1 ] && echo "+ $((count-1)) more")"
         fi
         echo -e "------------------------------------------"
         
@@ -445,7 +431,7 @@ elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then
             NAV_MENU=""
             if [[ $PAGE -lt $total_pages ]]; then NAV_MENU+="[N] Next | "; fi
             if [[ $PAGE -gt 1 ]]; then NAV_MENU+="[P] Prev | "; fi
-            if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up (..)"; fi
+            if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Main Menu"; else BACK_MSG="Up (..)"; fi
             
             show_footer "${NAV_MENU}[#] Enter | [MK] New Folder | [0] Select | [B] $BACK_MSG"
             read -e inp || exit 1

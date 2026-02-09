@@ -1,46 +1,42 @@
 #!/bin/bash
 # ZTURBO Universal Installer
-# Support: Debian, Ubuntu, Kali, CentOS, RHEL, AlmaLinux, Rocky, Fedora
+# Standard: Enterprise English Interface
+# Support: Debian, Ubuntu, Kali, CentOS, RHEL, AlmaLinux, Rocky, Fedora, Arch
 
-if [ "$EUID" -ne 0 ]; then echo "❌ Run as root (sudo ./install.sh)"; exit 1; fi
+if [ "$EUID" -ne 0 ]; then echo "❌ Access Denied: Please run as root (sudo ./install.sh)"; exit 1; fi
 
-# Ensure we are in the directory containing the script
 cd "$(dirname "$0")"
 
 echo ">> Detecting Operating System..."
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$NAME
-    echo "   Detected: $OS"
+    echo "   Target OS: $OS"
 else
-    echo "   Unknown OS. Proceeding with caution..."
+    echo "   Target OS: Unknown. Proceeding with standard installation..."
 fi
 
-echo ">> Installing dependencies..."
+echo ">> Installing system dependencies..."
 
-# DETECT PACKAGE MANAGER
+# PACKAGE MANAGER DETECTION & INSTALLATION
 if command -v apt-get &> /dev/null; then
-    # Debian/Ubuntu Family
     apt-get update -qq
     apt-get install -y rsync fpart
 elif command -v dnf &> /dev/null; then
-    # Modern RHEL/CentOS/Fedora
     dnf install -y epel-release 2>/dev/null
     dnf install -y rsync fpart
 elif command -v yum &> /dev/null; then
-    # Older CentOS/RHEL
     yum install -y epel-release 2>/dev/null
     yum install -y rsync fpart
 elif command -v pacman &> /dev/null; then
-    # Arch Linux
     pacman -Sy --noconfirm rsync fpart
 else
-    echo "⚠️  Warning: Package manager not found. Please install 'rsync' manually."
+    echo "⚠️  Warning: Package manager not identified. Please ensure 'rsync' and 'fpart' are installed manually."
 fi
 
-echo ">> Installing binaries..."
+echo ">> Deploying binaries..."
 if [ ! -f "zturbo" ] || [ ! -f "zmturbo" ]; then
-    echo "❌ Error: Source files (zturbo/zmturbo) missing!"
+    echo "❌ Critical Error: Source binaries (zturbo/zmturbo) not found in current directory."
     exit 1
 fi
 
@@ -52,6 +48,6 @@ chmod +x /usr/local/bin/zturbo /usr/local/bin/zmturbo
 echo "==============================================="
 echo "✅ ZTURBO INSTALLED SUCCESSFULLY!"
 echo "==============================================="
-echo "   Command: zturbo   (Start Transfer)"
-echo "   Command: zmturbo  (Start Monitoring)"
+echo "   Execution Command: zturbo"
+echo "   Monitoring Command: zmturbo"
 echo "==============================================="
