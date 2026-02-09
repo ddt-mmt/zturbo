@@ -8,7 +8,7 @@
 # Copyright (c) 2024 ddt-mmt
 
 DASHBOARD_DIR="/tmp/zturbo_dashboard"
-REPORT_DIR="/tmp/zturbo_reports"
+REPORT_DIR="$HOME/.zturbo/reports"
 mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
 
 REFRESH_RATE=2
