@@ -1,6 +1,6 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3.2%20(Enterprise)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.3%20(Enterprise)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 
@@ -10,7 +10,7 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ---
 
-## 🔥 Key Features (V1.3.1 Enterprise)
+## 🔥 Key Features (V1.3.3 Enterprise)
 
 ### 1. Robust & Resilient
 *   **🛡️ Auto-Retry Mechanism**: Automatically retries transfers (up to 3 times) in case of packet loss or transient network interruptions.
@@ -25,7 +25,8 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ### 3. Advanced Monitoring (ZMTURBO)
 *   **📊 Unicode Dashboard**: Elegant, modern progress bars using solid Unicode blocks.
-*   **👁️ Task-Centric View**: Displays a clear *Source -> Destination* summary for real-time tracking of specific tasks.
+*   **📡 Network Traffic**: Real-time RX (Down) and TX (Up) speed monitoring.
+*   **🧵 Thread Counter**: Live tracking of active process threads per job.
 *   **⚡ Anti-Flicker Rendering**: Smooth screen updates using cursor-reset techniques (stable like `htop`).
 *   **📉 Resource Guard**: Real-time monitoring of CPU Load and RAM usage to ensure system stability.
 
@@ -33,9 +34,11 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ## 📝 Changelog
 
-### V1.3.2 (Current)
+### V1.3.3 (Current)
+*   **📡 Network Monitor**: Added real-time Download (RX) and Upload (TX) speed indicators.
+*   **🧵 Thread Tracking**: Added live active thread/process counter per job.
+*   **✨ UX Polish**: Implemented Smart Input buffering and strict Anti-Flicker cursor management.
 *   **🐛 Critical Fix**: Resolved an issue where the transfer process would not start (infinite loop) after confirming with "OK" in the final review screen.
-*   **📦 Logic Update**: Optimized menu loop exit strategy.
 
 ---
 
