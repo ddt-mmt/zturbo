@@ -135,7 +135,7 @@ Dilisensikan di bawah **MIT License**.
 
 ## 👨‍💻 Credits
 *   **Original Idea & Concept**: [ddt-mmt](https://github.com/ddt-mmt)
-*   **Developer**: [ddt-mmt](https://github.com/ddt-mmt) & Gemini CLI Agent
+*   **Developer**: [ddt-mmt](https://github.com/ddt-mmt)
 
 Dibuat dengan ❤️ untuk komunitas SysAdmin & Network Engineer.
 
