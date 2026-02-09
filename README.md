@@ -55,18 +55,19 @@ ZTURBO memiliki dua "kepribadian" yang bisa dipilih sesuai situasi:
     cd zturbo
     ```
 
-2.  **Jalankan Installer**
+2.  **Jalankan Installer (Universal)**
     ```bash
     chmod +x install.sh
     sudo ./install.sh
     ```
-    *Script otomatis menginstall `rsync`, `fpart`, dan membuat symlink ke `/usr/local/bin`.*
+    *Support: Ubuntu, Debian, CentOS, RHEL, Fedora, Arch Linux.*
+    *Script otomatis mendeteksi OS dan menginstall dependency yang sesuai.*
 
-### Alternatif: Install via Paket .DEB (Recommended)
-Jika Anda ingin instalasi yang bersih dan termanajemen sistem:
+### Alternatif: Install via Paket .DEB (Debian/Ubuntu)
+Jika Anda ingin instalasi bersih via package manager:
 ```bash
-# Download file .deb dari folder dist/ atau release page
-sudo dpkg -i zturbo_1.3.1_all.deb
+# File output ada di folder dist/
+sudo dpkg -i zturbo.deb
 
 # Jika ada error dependency:
 sudo apt-get install -f

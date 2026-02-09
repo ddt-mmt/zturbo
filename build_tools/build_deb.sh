@@ -49,9 +49,10 @@ EOF
 
 # 5. Build Package
 mkdir -p ../dist
-dpkg-deb --build "$WORK_DIR" "../dist/${PKG_NAME}_${VERSION}_${ARCH}.deb"
+# Create simple named package
+dpkg-deb --build "$WORK_DIR" "../dist/zturbo.deb"
 
 # 6. Cleanup
 rm -rf "$WORK_DIR"
 
-echo "✅ Package created: dist/${PKG_NAME}_${VERSION}_${ARCH}.deb"
+echo "✅ Package created: dist/zturbo.deb"
