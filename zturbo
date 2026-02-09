@@ -174,7 +174,7 @@ select_source() {
             ((i++))
         done
         show_footer "[#] Select | [R] Refresh | [Q] Quit"
-        read pil || exit 1
+        read -e pil || exit 1
         
         if [[ "${pil^^}" == "Q" ]]; then exit 0; fi
         if [[ "${pil^^}" == "R" ]]; then continue; fi
@@ -268,7 +268,7 @@ fi
             if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up (..)"; fi
             
             show_footer "${NAV_MENU}[#] Enter/Toggle | [S #] Folder Select | [A] All | [C] Clear | [D] Done | [B] $BACK_MSG"
-            read inp || exit 1
+            read -e inp || exit 1
             
             INP_UP="${inp^^}"
             
@@ -391,7 +391,7 @@ select_dest() {
             ((i++))
         done
         show_footer "[#] Select | [R] Refresh | [B] Back"
-        read pil || exit 1
+        read -e pil || exit 1
         
         if [[ "${pil^^}" == "Q" ]]; then exit 0; fi
         if [[ "${pil^^}" == "B" ]]; then return 1; fi
@@ -448,7 +448,7 @@ elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then
             if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Back to Menu"; else BACK_MSG="Up (..)"; fi
             
             show_footer "${NAV_MENU}[#] Enter | [MK] New Folder | [0] Select | [B] $BACK_MSG"
-            read inp || exit 1
+            read -e inp || exit 1
             INP_UP="${inp^^}"
             
             if [[ "$INP_UP" == "B" ]]; then 
@@ -456,7 +456,7 @@ elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then
             fi
             
             if [[ "$inp" == "0" ]]; then DEST_ROOT="$NAV_PATH"; BREAK_DEST=true; break; fi
-            if [[ "$INP_UP" == "MK" ]]; then read -p "New Folder Name: " new_f; mkdir -p "$NAV_PATH/$new_f"; continue; fi
+            if [[ "$INP_UP" == "MK" ]]; then read -e -p "New Folder Name: " new_f; mkdir -p "$NAV_PATH/$new_f"; continue; fi
             
             if [[ "$INP_UP" == "N" ]]; then if [[ $PAGE -lt $total_pages ]]; then PAGE=$((PAGE+1)); fi; continue; fi
             if [[ "$INP_UP" == "P" ]]; then if [[ $PAGE -gt 1 ]]; then PAGE=$((PAGE-1)); fi; continue; fi
@@ -578,17 +578,17 @@ while true; do
         echo -e "------------------------------------------"
         echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
         show_footer "Type 'OK' | [1-5] Edit | [MK] Create Folder | [B] Back"
-        read k || exit 1
+        read -e k || exit 1
         
         if [[ "$k" == "OK" ]]; then break; fi
         case "${k^^}" in
             Q) exit 0 ;; B) STEP=2; continue ;; 
-            MK) read -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub" ;; 
+            MK) read -e -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub" ;; 
             1) select_source ;; 
             2) select_dest ;; 
             3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 
             4) 
-                read -p " Set Threads manually: " MANUAL_THREADS || exit 1
+                read -e -p " Set Threads manually: " MANUAL_THREADS || exit 1
                 if [[ "$MANUAL_THREADS" =~ ^[0-9]+$ ]]; then THREADS=$MANUAL_THREADS; else MANUAL_THREADS=""; fi 
             ;; 
             5) 

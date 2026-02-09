@@ -139,8 +139,8 @@ while true; do
     echo -e "LIMIT: Max Threads: ${G}$MAX_THREADS_SAFE${NC} | OS Guard: ${Y}${MEM_GUARD}MB${NC}        "
     
     echo -e "\n${Y}[ A. ACTIVE TRANSFERS ]${NC}                                        "
-    printf "% -7s % -8s % -6s % -12s % -12s % -26s %s\n" "PID" "USER" "CPU%" "SPEED" "ETA" "PROGRESS" "DESTINATION"
-    echo "--------------------------------------------------------------------------"
+    printf "% -7s % -8s % -6s % -12s % -12s % -26s %s\n" "PID" "USER" "CPU%" "SPEED" "ETA" "PROGRESS" "TASK (Source -> Dest)"
+    echo "-----------------------------------------------------------------------------------------------"
     count=0
     
     # OPTIMIZATION: Throttling DU Logic (Every 5 loops = 10s)
@@ -208,11 +208,20 @@ while true; do
                     [[ $perc -gt 100 ]] && perc=100
                     PERC_TXT="${perc}%"; BAR=$(draw_bar $perc); CURR_FMT=$(fmt_size $curr)
                 fi
-                d_name=$(basename "$dest")
+                
+                # TASK DISPLAY LOGIC
+                s_base=$(basename "$src")
+                d_base=$(basename "$dest")
+                task_str="$s_base -> $d_base"
+                # Smart Truncate if > 40 chars
+                if [[ ${#task_str} -gt 40 ]]; then
+                    task_str="${task_str:0:18}..${task_str: -18}"
+                fi
+
                 if [[ "$owner" == "$REAL_USER" ]]; then CL=$G; else CL=$W; fi
                 
-                # Removed brackets around BAR, expanded column width
-                printf "${CL}%-7s %-8s %-6s %-12s %-12s %-26s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT" ".../$d_name"
+                # Display Task String instead of just Dest
+                printf "${CL}%-7s %-8s %-6s %-12s %-12s %-26s %s${NC}\n" "$pid" "$owner" "$cpu_usage" "$SPEED_TXT" "$ETA_TXT" "$BAR $PERC_TXT" "$task_str"
                 ((count++))
             else 
                  rm -f "$f" 2>/dev/null
@@ -244,7 +253,7 @@ while true; do
         echo -e "${R}>>> EMERGENCY PANIC CLEAN (SAPU JAGAT) <<<${NC}"
         echo -e "${Y}WARNING: Killing all ZTURBO processes for user: ${BOLD_WHITE}$REAL_USER${NC}"
         echo "-----------------------------------------------------"
-        read -p "CONFIRM? (y/n): " conf
+        read -e -p "CONFIRM? (y/n): " conf
         if [[ "${conf^^}" == "Y" ]]; then
             echo -e "\n${R}💥 BOOM! Sending SIGKILL...${NC}"
             if [[ "$REAL_USER" == "root" ]]; then
@@ -284,7 +293,7 @@ while true; do
             if [[ $i -eq 1 ]]; then echo " (No reports found)"; sleep 2; break; fi
             
             show_footer "[#] View Report | [B] Back"
-            read act
+            read -e act
             if [[ "${act^^}" == "B" ]]; then break; fi
             
             if [[ "$act" =~ ^[0-9]+$ ]] && [[ "$act" -ge 1 ]] && [[ "$act" -lt "$i" ]]; then
@@ -319,13 +328,13 @@ while true; do
             if [[ $i -eq 1 ]]; then echo " (No active jobs)"; sleep 2; break; fi
             
             show_footer "[#] Stop Job | [B] Back"
-            read act
+            read -e act
             if [[ "${act^^}" == "B" ]]; then break; fi
             
             if [[ "$act" =~ ^[0-9]+$ ]] && [[ "$act" -ge 1 ]] && [[ "$act" -lt "$i" ]]; then
                 t_pid=${k_pids[$act]}
                 echo -e "\n${BOLD_RED}WARNING: Terminating Process Group $t_pid.${NC}"
-                read -p "Confirm Kill? (y/n): " confirm
+                read -e -p "Confirm Kill? (y/n): " confirm
                 if [[ "${confirm^^}" == "Y" ]]; then
                     PGID=$(ps -o pgid= -p $t_pid 2>/dev/null | grep -o '[0-9]*')
                     if [[ -n "$PGID" ]]; then 

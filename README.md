@@ -1,6 +1,6 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3%20(Enterprise)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.1%20(Polished)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 
@@ -10,12 +10,13 @@ Toolkit ini menggabungkan keandalan `rsync` dengan kecepatan `fpsync` dalam arsi
 
 ---
 
-## 🔥 Fitur Utama (V1.3 Enterprise)
+## 🔥 Fitur Utama (V1.3.1)
 
 ### 1. Robust & Resilient (Anti-Gagal)
 *   **🛡️ Auto-Retry Mechanism**: Otomatis mencoba ulang (3x) jika terjadi *packet loss* atau gangguan jaringan sesaat.
 *   **⏱️ Smart Timeout**: Mendeteksi koneksi "zombie" dan meresetnya otomatis untuk mencegah beban pada Router.
 *   **💾 Pre-Flight Check**: Menghitung sisa ruang disk tujuan sebelum transfer dimulai untuk mencegah *disk full error*.
+*   **⌨️ Smart Input**: Mendukung navigasi keyboard penuh (Backspace, Arrow keys) di semua menu interaktif.
 
 ### 2. Hybrid Parallel Engine
 *   **🚀 Files**: Dijalankan secara **Paralel (Background)**. Memenuhi bandwidth jaringan secara instan.
@@ -23,7 +24,8 @@ Toolkit ini menggabungkan keandalan `rsync` dengan kecepatan `fpsync` dalam arsi
 *   **🏎️ Optimized Flags**: Mendukung `--sparse` (untuk VM image), `-W` (Whole File), dan `--inplace` untuk kecepatan maksimal.
 
 ### 3. Modern Monitoring (ZMTURBO)
-*   **📊 Unicode Dashboard**: Tampilan progress bar modern, bersih, dan informatif.
+*   **📊 Unicode Dashboard**: Tampilan progress bar modern (Solid Blocks) yang elegan.
+*   **👁️ Task Focus**: Menampilkan ringkasan *Source -> Dest* untuk pelacakan transfer yang lebih jelas.
 *   **⚡ Anti-Flicker**: Rendering layar yang halus tanpa kedip (stabil seperti `htop`).
 *   **📉 Resource Guard**: Memantau CPU Load & RAM secara *real-time* untuk mencegah server hang.
 
@@ -83,18 +85,18 @@ Buka terminal baru dan ketik:
 zmturbo
 ```
 
-**Tampilan Dashboard V1.3:**
+**Tampilan Dashboard V1.3.1:**
 ```text
 === ZMTURBO V1.3 (OPTIMIZED): MONITORING CENTER ===
 HOST : server-prod-01 | IP: 10.10.1.5 | USER: root
 STATS: CPU Load: 1.25 | RAM: 4500MB (15%) | IO: 0%
 
 [ A. ACTIVE TRANSFERS ]
-PID     USER     CPU%   SPEED        ETA          PROGRESS                     DESTINATION
-------------------------------------------------------------------------------------------
-8821    root     12.5   145.2MB/s    02m10s       ██████████░░░░░░░░░░ 50%     .../backup_vm
-9012    admin    5.0    40.5MB/s     05m00s       ████░░░░░░░░░░░░░░░░ 20%     .../web_data
-------------------------------------------------------------------------------------------
+PID     USER     CPU%   SPEED        ETA          PROGRESS                     TASK (Source -> Dest)
+--------------------------------------------------------------------------------------------------
+8821    root     12.5   145.2MB/s    02m10s       ██████████░░░░░░░░░░ 50%     big_vm.qcow2 -> backup_san
+9012    admin    5.0    40.5MB/s     05m00s       ████░░░░░░░░░░░░░░░░ 20%     web_data -> /mnt/nas01
+--------------------------------------------------------------------------------------------------
 ```
 
 ---
