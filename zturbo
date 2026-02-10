@@ -1,6 +1,6 @@
 #!/bin/bash
 # ========================================================
-#    ZTURBO V1.3.4 (OPTIMIZED)
+#    ZTURBO V1.3.4 (STABLE)
 #    - Remote SSH Source Integration (TrueNAS/Direct)
 #    - O(1) Selection Lookup (Associative Arrays)
 #    - Consistent Bash Syntax
@@ -132,7 +132,7 @@ print_header() {
     clear
     MY_IP=$(hostname -I | awk '{print $1}')
     echo -e "${BOLD_GREEN}==========================================${NC}"
-    echo -e "${BOLD_GREEN}       ZTURBO V1.3.4 - OPTIMIZED EDITION  ${NC}"
+    echo -e "${BOLD_GREEN} ZTURBO V1.3.4 - ENTERPRISE EDITION (STABLE)${NC}"
     echo -e "${BOLD_GREEN}==========================================${NC}"
     if [[ "$IS_REMOTE" == true ]]; then
         echo -e "👤 USER: ${BOLD_YELLOW}$REAL_USER${NC} | 🌐 REMOTE: ${BOLD_CYAN}$REMOTE_STR${NC} | 💾 MODE: $CURRENT_MODE"
