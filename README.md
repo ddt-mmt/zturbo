@@ -1,6 +1,6 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3.3%20(Enterprise)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.4%20(Enterprise)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 
@@ -10,9 +10,10 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ---
 
-## 🔥 Key Features (V1.3.3 Enterprise)
+## 🔥 Key Features (V1.3.4 Enterprise)
 
 ### 1. Robust & Resilient
+*   **🌐 Remote SSH Integration**: Seamlessly pull data from remote servers (TrueNAS, Direct Linux) using optimized SSH tunnels.
 *   **🛡️ Auto-Retry Mechanism**: Automatically retries transfers (up to 3 times) in case of packet loss or transient network interruptions.
 *   **⏱️ Smart Timeout**: Detects "zombie" connections and resets them automatically to prevent resource exhaustion on network routers.
 *   **💾 Pre-Flight Check**: Calculates source data size against destination disk availability before execution to prevent "Disk Full" errors.
@@ -35,7 +36,12 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ## 📝 Changelog
 
-### V1.3.3 (Current)
+### V1.3.4 (Current)
+*   **🌐 Remote Source**: Added support for Remote SSH Source (TrueNAS/Direct).
+*   **🔍 SSH Pre-Check**: Integrated automated connection testing for remote sources.
+*   **📊 Remote Scaling**: Support for `du` and size calculation over SSH.
+
+### V1.3.3
 *   **📡 Network Monitor**: Added real-time Download (RX) and Upload (TX) speed indicators.
 *   **🧵 Thread Tracking**: Added live active thread/process counter per job.
 *   **📂 Persistent History**: Reports are now saved to `~/.zturbo/reports` to survive reboots and updates.

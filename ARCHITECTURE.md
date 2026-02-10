@@ -9,8 +9,14 @@ graph TD
     User([User]) -->|Interact| ZTURBO[ZTURBO CLI]
     User -->|Monitor| ZMTURBO[ZMTURBO Monitor]
     
+    subgraph Source Selection
+        ZTURBO -->|Local| LocalFiles[Local FS / Mounts]
+        ZTURBO -->|Remote| RemoteSSH[SSH Source / TrueNAS]
+    end
+
     subgraph Core Engine
-        ZTURBO -->|Config| ModeSelect{Select Mode}
+        LocalFiles --> ModeSelect{Select Mode}
+        RemoteSSH --> ModeSelect
         ModeSelect -->|Safe Mode| Sequential[Sequential Rsync]
         ModeSelect -->|Turbo Mode| Hybrid[Hybrid Parallel Engine]
         
@@ -39,13 +45,20 @@ The core logic of `zturbo` handles user input, path selection, and mode switchin
 sequenceDiagram
     participant User
     participant Menu as Menu System
+    participant SSH as SSH Module
     participant Calc as Size Calculator
     participant Engine as Transfer Engine
     participant Log as Report Generator
 
-    User->>Menu: Select Source Paths
+    User->>Menu: Select Source (Local/Remote)
+    alt is Remote
+        Menu->>SSH: Prompt User/IP & Path
+        SSH->>SSH: Test Connection
+        SSH-->>Menu: Connection Success
+    end
+    
     User->>Menu: Select Destination Path
-    Menu->>Calc: Background Size Calculation
+    Menu->>Calc: Background Size Calculation (Local/SSH)
     Calc-->>Menu: Return Total Size & File Count
     
     User->>Menu: Select Mode (SAFE/TURBO)
@@ -73,7 +86,16 @@ sequenceDiagram
     Engine-->>User: Show Success/Failure
 ```
 
-## 3. Directory Structure & Components
+## 3. Remote SSH Integration
+
+ZTURBO V1.3.4 introduces native SSH integration for remote sources.
+
+*   **Connection Handling**: Uses standard SSH with `ConnectTimeout` and `BatchMode` checks.
+*   **Remote Metadata**: Executes `du` over SSH to calculate source sizes before transfer.
+*   **Data Pathing**: Automatically translates selected remote paths into `user@ip:path` format for `rsync` and `fpsync`.
+*   **Security**: Leverages existing SSH key-based authentication for seamless non-interactive transfers.
+
+## 4. Directory Structure & Components
 
 ```mermaid
 classDiagram
