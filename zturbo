@@ -566,10 +566,10 @@ while true; do
                         for s in "${SELECTED_PATHS[@]}"; do
                             if [[ "$IS_REMOTE" == true ]]; then
                                 # Remote du over SSH
-                                sz=$(ssh "$REMOTE_STR" "timeout 15 du -s \"$s\"" 2>/dev/null | awk '{print $1}')
+                                sz=$(ssh "$REMOTE_STR" "timeout 15 du -sb \"$s\"" 2>/dev/null | awk '{print $1}')
                             else
                                 # Local du
-                                sz=$(timeout 15 du -s "$s" 2>/dev/null | awk '{print $1}')
+                                sz=$(timeout 15 du -sb "$s" 2>/dev/null | awk '{print $1}')
                             fi
                             [ -z "$sz" ] && sz=0
                             TEMP_SIZE=$((TEMP_SIZE + sz))
@@ -591,7 +591,7 @@ while true; do
                                     if [[ -f "/tmp/zturbo_sz_res_$$" ]]; then
                                         # Finished
                                         TOTAL_SRC_SIZE=$(cat "/tmp/zturbo_sz_res_$$")
-                                        HR_SRC=$(numfmt --to=iec --from-unit=1K $TOTAL_SRC_SIZE 2>/dev/null || echo "?")                            
+                                        HR_SRC=$(numfmt --to=iec $TOTAL_SRC_SIZE 2>/dev/null || echo "?")                            
                             DEST_FREE=$(df -k "$DEST_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')
                             [ -z "$DEST_FREE" ] && DEST_FREE=0
                             HR_FREE=$(numfmt --to=iec --from-unit=1K $DEST_FREE)
@@ -709,7 +709,7 @@ fi
 if [[ "$TOTAL_SRC_SIZE" -gt 0 ]]; then
     echo ">> Using cached source metadata..."
     # Convert 1K blocks (du -s) to Bytes for accurate progress
-    CALC_BYTES=$(awk -v b="$TOTAL_SRC_SIZE" 'BEGIN {print b * 1024}')
+    CALC_BYTES=$TOTAL_SRC_SIZE
     
     echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$CALC_BYTES|$MON_START_TIME" > "$MONITOR_FILE"
     echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
