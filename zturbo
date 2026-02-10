@@ -40,7 +40,7 @@ REMOTE_STR=""
 
 mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
 chmod 777 "$DASHBOARD_DIR" "$REPORT_DIR" 2>/dev/null
-find "$REPORT_DIR" -type f -name "*.txt" -mtime +7 -delete 2>/dev/null
+# History retention policy removed by user request (was: delete > 7 days)
 
 if [[ -n "$SUDO_USER" ]]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
 

@@ -31,9 +31,10 @@
 
 if [ -n "$SUDO_USER" ]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
 
-USER_HOME=$(eval echo ~$REAL_USER)
-DASHBOARD_DIR="$USER_HOME/.zturbo/dashboard"
-REPORT_DIR="$USER_HOME/.zturbo/reports"
+# FIX: Use standard HOME to match zturbo output location
+# This ensures we find reports even if running as root/sudo
+DASHBOARD_DIR="$HOME/.zturbo/dashboard"
+REPORT_DIR="$HOME/.zturbo/reports"
 mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
 
 # CONFIG: REFRESH RATE (Detik)
@@ -140,7 +141,7 @@ while true; do
     MEM_GUARD=$(( MEM_TOT * 20 / 100 )); MEM_SAFE=$(( MEM_TOT * 80 / 100 ))
     MAX_THREADS_SAFE=$(( MEM_SAFE / 60 )); [ $MAX_THREADS_SAFE -lt 2 ] && MAX_THREADS_SAFE=2
 
-    echo -e "${C}=== ZMTURBO V1.3.4 (MERGED): MONITORING CENTER ===${NC}${K}"
+    echo -e "${C}=== ZMTURBO V1.3.4 (FIXED-HISTORY): MONITORING CENTER ===${NC}${K}"
     echo -e "HOST : ${W}$(hostname)${NC} | IP: ${Y}$MY_IP${NC} ($IFACE) | USER: ${Y}$REAL_USER${NC}${K}"
     echo -e "STATS: CPU: ${W}$LOAD${NC} | RAM: ${MEM_COL}${MEM_PERC}%${NC} | IO: ${IO_COL}${IOWAIT}%${NC} | NET: ${G}⬇$RX_FMT ⬆$TX_FMT${NC}${K}"
     echo -e "LIMIT: Max Threads: ${G}$MAX_THREADS_SAFE${NC} | OS Guard: ${Y}${MEM_GUARD}MB${NC}${K}"
@@ -151,6 +152,8 @@ while true; do
     if [ $((LOOP_IDX % 5)) -eq 0 ]; then RUN_DU=true; fi
     NOW_TS=$(date +%s)
     
+    unset active_transfers
+    unset processed_pids
     declare -a active_transfers
     declare -A processed_pids
     shopt -s nullglob
@@ -174,34 +177,62 @@ while true; do
             cpu_usage=$(ps -p $all_pids -o %cpu --no-headers 2>/dev/null | awk '{sum+=$1} END {if (sum=="") print "0.0"; else printf "%.1f", sum}')
 
             CACHE_FILE="$DASHBOARD_DIR/zmturbo_cache_$pid"
-            curr=0
-            if [ "$RUN_DU" = true ]; then
-                 curr=$(timeout 1 du -sb "$dest" 2>/dev/null | cut -f1)
-                 [ -n "$curr" ] && echo "$curr" > "$CACHE_FILE"
-                 if [ -n "${PREV_SIZE[$pid]}" ]; then
-                     delta_bytes=$(( curr - ${PREV_SIZE[$pid]} ))
-                     delta_time=$(( NOW_TS - ${PREV_TIME[$pid]} ))
-                     if [ $delta_time -gt 0 ] && [ $delta_bytes -ge 0 ]; then
-                         spd=$(( delta_bytes / delta_time ))
-                         if [ $spd -gt 0 ]; then
-                             SPEED_TXT="$(fmt_size $spd)/s"
-                             if [[ "$total" =~ ^[0-9]+$ ]] && [ "$total" -gt 0 ]; then
-                                 rem_bytes=$(( total - curr ))
-                                 eta_sec=$(( rem_bytes / spd ))
-                                 ETA_TXT=$(fmt_time $eta_sec)
+            META_FILE="${CACHE_FILE}_meta"
+            DU_RES_FILE="/tmp/zmturbo_du_${pid}.res"
+            DU_LOCK="/tmp/zmturbo_du_${pid}.lock"
+
+            # 1. Initialize from Cache (Default)
+            curr=0; SPEED_TXT="-"; ETA_TXT="-"
+            if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
+            if [ -f "$META_FILE" ]; then IFS='|' read -r SPEED_TXT ETA_TXT < "$META_FILE"; fi
+            
+            # 2. Check for Background Result (Async Update)
+            if [ -f "$DU_RES_FILE" ]; then
+                NEW_VAL=$(cat "$DU_RES_FILE" 2>/dev/null)
+                # Verify it is a valid number
+                if [[ "$NEW_VAL" =~ ^[0-9]+$ ]]; then
+                     curr=$NEW_VAL
+                     echo "$curr" > "$CACHE_FILE"
+                     rm -f "$DU_RES_FILE"
+                     
+                     # Calculate Speed/ETA only when we have fresh data
+                     if [ -n "${PREV_SIZE[$pid]}" ]; then
+                         delta_bytes=$(( curr - ${PREV_SIZE[$pid]} ))
+                         delta_time=$(( NOW_TS - ${PREV_TIME[$pid]} ))
+                         if [ $delta_time -gt 0 ] && [ $delta_bytes -ge 0 ]; then
+                             spd=$(( delta_bytes / delta_time ))
+                             if [ $spd -gt 0 ]; then
+                                 SPEED_TXT="$(fmt_size $spd)/s"
+                                 if [[ "$total" =~ ^[0-9]+$ ]] && [ "$total" -gt 0 ]; then
+                                     rem_bytes=$(( total - curr ))
+                                     eta_sec=$(( rem_bytes / spd ))
+                                     ETA_TXT=$(fmt_time $eta_sec)
+                                 else
+                                     ETA_TXT="?"
+                                 fi
                              else
-                                 ETA_TXT="?"
+                                 SPEED_TXT="0B/s"; ETA_TXT="Stalled"
                              fi
-                         else
-                             SPEED_TXT="0B/s"; ETA_TXT="Stalled"
+                             echo "$SPEED_TXT|$ETA_TXT" > "$META_FILE"
                          fi
                      fi
-                 fi
-                 PREV_SIZE[$pid]=$curr; PREV_TIME[$pid]=$NOW_TS
-                 echo "$SPEED_TXT|$ETA_TXT" > "${CACHE_FILE}_meta"
-            else
-                 if [ -f "$CACHE_FILE" ]; then curr=$(cat "$CACHE_FILE"); fi
-                 if [ -f "${CACHE_FILE}_meta" ]; then IFS='|' read -r SPEED_TXT ETA_TXT < "${CACHE_FILE}_meta"; fi
+                     PREV_SIZE[$pid]=$curr; PREV_TIME[$pid]=$NOW_TS
+                else
+                     rm -f "$DU_RES_FILE" # Cleanup invalid/empty result
+                fi
+            fi
+
+            # 3. Trigger New Background DU (Periodically)
+            if [ "$RUN_DU" = true ]; then
+                if [ ! -f "$DU_LOCK" ]; then
+                     touch "$DU_LOCK"
+                     (
+                         # Increased timeout for large dirs, run in background
+                         val=$(timeout 15 du -sb "$dest" 2>/dev/null | cut -f1)
+                         [ -n "$val" ] && echo "$val" > "$DU_RES_FILE"
+                         rm -f "$DU_LOCK"
+                     ) &
+                fi
             fi
             [ -z "$curr" ] && curr=0; [ -z "$SPEED_TXT" ] && SPEED_TXT="-"; [ -z "$ETA_TXT" ] && ETA_TXT="-"
 
@@ -225,11 +256,11 @@ while true; do
 
     # [A] ACTIVE TRANSFERS
     echo -e "${K}\n${Y}[ A. ACTIVE TRANSFERS ]${NC}${K}"
-    printf "% -7s % -8s % -6s % -5s % -12s % -12s % -26s${K}\n" "PID" "USER" "CPU%" "THRD" "SPEED" "ETA" "PROGRESS"
-    echo -e "-----------------------------------------------------------------------------------------------${K}"
     if [ ${#active_transfers[@]} -eq 0 ]; then
         echo -e " ${R}(No active transfers found)${NC}${K}"
     else
+        printf "% -7s % -8s % -6s % -5s % -12s % -12s % -26s${K}\n" "PID" "USER" "CPU%" "THRD" "SPEED" "ETA" "PROGRESS"
+        echo -e "-----------------------------------------------------------------------------------------------${K}"
         for item in "${active_transfers[@]}"; do
             IFS='|' read -r pid owner cpu_usage proc_count SPEED_TXT ETA_TXT perc PERC_TXT src dest <<< "$item"
             BAR=$(draw_bar $perc)
@@ -297,12 +328,25 @@ while true; do
             printf "% -4s % -16s % -10s % -24b %s\n" "NO" "TIMESTAMP" "USER" "STATUS" "JOB ID"
             echo "--------------------------------------------------------------------------------"
             i=1; declare -a r_files; shopt -s nullglob
-            for f in $(ls -t "$REPORT_DIR"/*.txt 2>/dev/null | head -n 10); do
-                status=$(grep "Final Status:" "$f" | tail -1 | cut -d':' -f2 | xargs)
-                [[ "$status" == *"SUCCESS"* ]] && st_fmt="${G}SUCCESS${NC}" || st_fmt="${R}FAILED${NC}"
-                printf " [%d] % -16s % -10s % -24b %s\n" "$i" "$(date -r "$f" "+%m-%d %H:%M")" "$(basename "$f" | cut -d'_' -f1)" "$st_fmt" "$(basename "$f")"
+            
+            # Use find to get files, sort by time (newest first), take top 10
+            # Safe way to handle filenames with spaces (though reports shouldn't have them)
+            while IFS= read -r f; do
+                [ -z "$f" ] && continue
+                status=$(grep "Final Status:" "$f" 2>/dev/null | tail -1 | cut -d':' -f2 | xargs)
+                if [[ -z "$status" ]]; then status="UNKNOWN"; fi
+                
+                [[ "$status" == *"SUCCESS"* ]] && st_fmt="${G}SUCCESS${NC}" 
+                [[ "$status" == *"WARNING"* ]] && st_fmt="${Y}WARNING${NC}"
+                [[ "$status" == *"FAILED"* || "$status" == *"UNKNOWN"* ]] && st_fmt="${R}$status${NC}"
+                
+                # Format Date nicely
+                f_date=$(date -r "$f" "+%m-%d %H:%M")
+                
+                printf " [%d] % -16s % -10s % -24b %s\n" "$i" "$f_date" "$(basename "$f" | cut -d'_' -f1)" "$st_fmt" "$(basename "$f")"
                 r_files[$i]="$f"; ((i++))
-            done
+            done < <(find "$REPORT_DIR" -maxdepth 1 -name "*.txt" -printf "%T@ %p\n" | sort -nr | head -n 10 | cut -d' ' -f2-)
+
             [[ $i -eq 1 ]] && { echo " (No reports found)"; sleep 2; break; }
             show_footer "[#] View Report | [B] Back"; read -e act
             [[ "${act^^}" == "B" ]] && break

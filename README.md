@@ -36,7 +36,9 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ## 📝 Changelog
 
-### V1.3.4 (Current)
+### V1.3.4 (Stable Release)
+*   **🛠️ Monitor Fix**: Resolved critical UI freeze issue by moving size calculation (`du`) to background process.
+*   **📜 History Fixed**: Disabled auto-deletion of logs; transfer history is now preserved indefinitely.
 *   **🌐 Remote Source**: Added support for Remote SSH Source (TrueNAS/Direct).
 *   **🔍 SSH Pre-Check**: Integrated automated connection testing for remote sources.
 *   **📊 Remote Scaling**: Support for `du` and size calculation over SSH.
