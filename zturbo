@@ -1,504 +1,41 @@
 #!/bin/bash
 # ========================================================
-#    ZTURBO V1.3.4 (STABLE)
-#    - Remote SSH Source Integration (TrueNAS/Direct)
-#    - O(1) Selection Lookup (Associative Arrays)
-#    - Consistent Bash Syntax
-#    - SMB/CIFS Compatibility Patch (v1.0)
-#      - Adds --no-p, --no-t, --omit-dir-times to rsync
-#      - Increases rsync timeout to 600 seconds for SMB transfers
+#    ZTURBO V1.3.5 (MODULAR)
 # ========================================================
 #
 # MIT License
-#
 # Copyright (c) 2024 ddt-mmt
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-#
 
-# --- CONFIG ---
-CPU_CORES=$(nproc)
-CURRENT_MODE="SAFE" 
-FILES_PER_JOB=2500
-DASHBOARD_DIR="/tmp/zturbo_dashboard"
-REPORT_DIR="$HOME/.zturbo/reports"
+# --- SETUP ---
+# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)" # Not needed for installed version
+source "/usr/lib/zturbo/config.sh"
+source "/usr/lib/zturbo/utils.sh"
+source "/usr/lib/zturbo/ui.sh"
+source "/usr/lib/zturbo/engine.sh"
 
+# Inisialisasi awal
 mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
 chmod 777 "$DASHBOARD_DIR" "$REPORT_DIR" 2>/dev/null
-# History retention policy removed by user request (was: delete > 7 days)
-
 if [[ -n "$SUDO_USER" ]]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
-
-JOB_ID="${REAL_USER}_$$"
-MONITOR_FILE="$DASHBOARD_DIR/${JOB_ID}.info"
-REPORT_TXT="$REPORT_DIR/${REAL_USER}_job$$.txt"
+export JOB_ID="${REAL_USER}_$$"
+export JOB_DIR="${DASHBOARD_DIR}/${JOB_ID}"
+export JOB_INFO_FILE="${JOB_DIR}/info"
+export JOB_STATUS_FILE="${JOB_DIR}/status"
+export JOB_PID_FILE="${JOB_DIR}/pid"
+export REPORT_TXT="${REPORT_DIR}/${REAL_USER}_job$$.txt"
 JOB_COMPLETED=false
 
-# --- STYLES ---
-BOLD_GREEN=$'\e[1;32m'; BOLD_YELLOW=$'\e[1;33m'; BOLD_CYAN=$'\e[1;36m'
-BOLD_MAGENTA=$'\e[1;35m'; BOLD_WHITE=$'\e[1;37m'; BOLD_RED=$'\e[1;31m'
-NC=$'\e[0m'; GREY=$'\e[0;90m'
-
-# --- DEPENDENCY CHECK ---
-check_deps() {
-    local deps=("rsync" "du" "find" "grep")
-    local missing=()
-    for cmd in "${deps[@]}"; do
-        if ! command -v "$cmd" &> /dev/null; then
-            missing+=("$cmd")
-        fi
-    done
-    
-    # Check for fpsync specifically
-    if ! command -v fpsync &> /dev/null; then
-        # fpsync is part of fpart
-        if ! command -v fpart &> /dev/null; then
-             # Just warn, don't exit, as SAFE mode (rsync) still works
-             echo -e "${BOLD_YELLOW}WARNING: 'fpsync' (fpart) not found. TURBO mode will be limited.${NC}"
-             sleep 2
-        fi
-    fi
-
-    if [[ ${#missing[@]} -ne 0 ]]; then
-        echo -e "${BOLD_RED}CRITICAL ERROR: Missing dependencies: ${missing[*]}${NC}"
-        echo -e "Please install them first (e.g., sudo apt install fpart rsync)"
-        exit 1
-    fi
-}
 check_deps
-
-cleanup() {
-    rm -f "$MONITOR_FILE"
-    rm -f /tmp/dt_src_$$ /tmp/dt_dest_$$ /tmp/zturbo_size_$$ 2>/dev/null
-    
-    if [[ -n "$GOV_PID" ]]; then kill $GOV_PID 2>/dev/null; fi
-    if [[ ${#BG_PIDS[@]} -gt 0 ]]; then kill "${BG_PIDS[@]}" 2>/dev/null; fi
-    pkill -P $$ 2>/dev/null
-
-    if [[ "$JOB_COMPLETED" == false ]]; then
-        if [[ -f "$REPORT_TXT" ]]; then
-            echo -e "\nSTATUS      : CANCELLED/FAILED (Interrupted)" >> "$REPORT_TXT"
-            echo "----------------------------------------------------------------" >> "$REPORT_TXT"
-        fi
-        echo -e "\n${BOLD_RED}❌ Process Interrupted (Ctrl+C). Cleaning up...${NC}"
-    fi
-}
+init_job_dir
 trap cleanup EXIT
 trap "exit 1" INT TERM
 
-# --- DYNAMIC GOVERNOR ---
-dynamic_governor() {
-    if [[ "$CURRENT_MODE" != "TURBO" ]]; then return; fi
-    local pgid=$(ps -o pgid= -p $$ | xargs)
-    local state="NORMAL"
-    
-    while true; do
-        read load_1 _ < /proc/loadavg
-        load_int=${load_1%%.*}
-        core_limit=$(nproc)
-        busy_limit=$(( core_limit + 2 ))
-        
-        if [[ "$load_int" -ge "$busy_limit" ]]; then
-            if [[ "$state" != "YIELD" ]]; then
-                renice -n 15 -g "$pgid" >/dev/null 2>&1
-                state="YIELD"
-            fi
-        else
-            if [[ "$state" != "NORMAL" ]]; then
-                renice -n 0 -g "$pgid" >/dev/null 2>&1
-                state="NORMAL"
-            fi
-        fi
-        sleep 5
-    done
-}
-
-print_header() {
-    clear
-    MY_IP=$(hostname -I | awk '{print $1}')
-    echo -e "${BOLD_GREEN}==========================================${NC}"
-    echo -e "${BOLD_GREEN} ZTURBO V1.3.4 - ENTERPRISE EDITION (STABLE)${NC}"
-    echo -e "${BOLD_GREEN}==========================================${NC}"
-    echo -e "👤 USER: ${BOLD_YELLOW}$REAL_USER${NC} | 🌐 IP: ${BOLD_MAGENTA}$MY_IP${NC} | 💾 MODE: $CURRENT_MODE"
-    echo -e "------------------------------------------"
-}
-
-show_footer() {
-    echo -e "\n${BOLD_CYAN}------------------------------------------${NC}"
-    echo -e "$1"
-    echo -e "${BOLD_CYAN}------------------------------------------${NC}"
-    echo -n " 👉 INPUT > "
-}
-
-format_duration() { printf "%02dh:%02dm:%02ds" $(($1/3600)) $(($(( $1%3600 ))/60)) $(($1%60)); }
-human_size() { numfmt --to=iec-i --suffix=B $1 2>/dev/null || echo "$1 B"; }
-
-# --- DATA STRUCTURES ---
-# Using Associative Array for O(1) lookup
-declare -A SELECTED_MAP
-declare -a SELECTED_PATHS
-
-# --- 1. SOURCE MODULE (PAGINATED) ---
-
-select_source() {
-    while true; do
-        IS_REMOTE=false
-        REMOTE_STR=""
-        print_header
-        echo -e "${BOLD_YELLOW}[ STEP 1 ] SELECT SOURCE LOCATION${NC}"
-        
-        # Mounts listing
-        mapfile -t mounts < <(mount | grep -E "type cifs|type nfs|type gpfs|type smb|on /mnt|on /media" | awk '{print $3 "|" $1}')
-        echo -e " [0] 🏠 HOME DIRECTORY ($HOME)"
-        echo -e " [1] 🌳 ROOT DIRECTORY (/)"
-        i=2
-        for line in "${mounts[@]}"; do
-            path=$(echo "$line" | cut -d'|' -f1)
-            src=$(echo "$line" | cut -d'|' -f2)
-            echo -e " [$i] 📂 ${BOLD_MAGENTA}$path${NC}"
-            echo -e "     └─ 🔗 Source: ${GREY}$src${NC}"
-            ((i++))
-        done
-        show_footer "[#] Select | [Q] Quit"
-        read -e pil || exit 1
-        
-        if [[ "${pil^^}" == "Q" ]]; then exit 0; fi
-        
-        if [[ "$pil" == "0" ]]; then NAV_PATH="$HOME"
-        elif [[ "$pil" == "1" ]]; then NAV_PATH="/"
-        elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then
-             idx=$((pil-2)); l="${mounts[$idx]}"; NAV_PATH=$(echo "$l" | cut -d'|' -f1)
-        else 
-             echo "Invalid Choice!"; sleep 1; continue
-        fi
-
-        MOUNT_ROOT="$NAV_PATH"
-        BREAK_SRC=false; PAGE=1; PER_PAGE=15
-        
-        while true; do
-            print_header
-            echo -e "${BOLD_YELLOW}[ BROWSE SOURCE ]${NC} ${BOLD_WHITE}$NAV_PATH${NC}"
-            
-            SEL_COUNT=${#SELECTED_MAP[@]}
-            if [[ $SEL_COUNT -gt 0 ]]; then
-                echo -e "${BOLD_GREEN}✅ Selected Items: $SEL_COUNT${NC} (Type 'D' to Finalize)"
-            else
-                echo -e "${GREY}   No items selected yet.${NC}"
-            fi
-
-            mapfile -t contents < <(\ls -1 -A --group-directories-first --color=never "$NAV_PATH" 2>/dev/null)
-            total_items=${#contents[@]}
-            
-            total_pages=$(( (total_items + PER_PAGE - 1) / PER_PAGE ))
-            [ $total_pages -eq 0 ] && total_pages=1
-            [ $PAGE -gt $total_pages ] && PAGE=$total_pages
-            [ $PAGE -lt 1 ] && PAGE=1
-            start_idx=$(( (PAGE - 1) * PER_PAGE ))
-            
-            echo -e " ----------------------------------------"
-            echo -e " PAGE $PAGE of $total_pages | Total Items: $total_items"
-            echo -e " ----------------------------------------"
-            
-            if [[ "$PAGE" -eq 1 ]]; then
-                 echo -e " [0] ✅ DONE / SELECT CURRENT FOLDER"
-            fi
-
-            display_count=1
-            curr_idx=$start_idx
-            
-            # Display loop
-            for (( i=0; i<PER_PAGE; i++ )); do
-                idx=$(( start_idx + i ))
-                if [[ $idx -ge $total_items ]]; then break; fi
-                
-                item="${contents[$idx]}"
-                fp="${NAV_PATH%/}/$item"
-                
-                # Check Selection Map (O(1))
-                if [[ -n "${SELECTED_MAP["$fp"]}" ]]; then
-                    MARK="[${BOLD_GREEN}*${NC}]"
-                else
-                    MARK="[ ]"
-                fi
-                
-                # Get Size (Only for displayed items to keep it fast)
-                # Use timeout to prevent hang on stale network mounts
-                item_size=$(timeout 0.1 du -sh "$fp" 2>/dev/null | awk '{print $1}')
-                [ -z "$item_size" ] && item_size="?"
-
-                rel_num=$(( i + 1 ))
-                
-                if [[ -d "$fp" ]]; then
-                    printf " %s [%2d] 📁 ${BOLD_CYAN}%-30s${NC} ${BOLD_YELLOW}(%s)${NC}\n" "$MARK" "$rel_num" "$item/" "$item_size"
-                else
-                    printf " %s [%2d] 📄 %-30s ${GREY}(%s)${NC}\n" "$MARK" "$rel_num" "$item" "$item_size"
-                fi
-                display_count=$((display_count+1))
-            done
-            
-            # Navigation Menu Construction
-            NAV_MENU=""
-            if [[ $PAGE -lt $total_pages ]]; then NAV_MENU+="[N] Next | "; fi
-            if [[ $PAGE -gt 1 ]]; then NAV_MENU+="[P] Prev | "; fi
-            if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Main Menu"; else BACK_MSG="Up (..)"; fi
-            
-            show_footer "${NAV_MENU}[#] Enter/Toggle | [S #] Select Folder | [A] All | [C] Clear | [D] Done | [B] $BACK_MSG"
-            read -e inp || exit 1
-            
-            INP_UP="${inp^^}"
-            
-            # Logic Actions
-            if [[ "$INP_UP" == "Q" ]]; then exit 0; fi
-            if [[ "$INP_UP" == "D" ]] || [[ "$inp" == "0" ]]; then
-                if [[ ${#SELECTED_MAP[@]} -eq 0 ]]; then
-                     # If nothing selected, select current folder
-                     SELECTED_MAP["$NAV_PATH"]=1
-                fi
-                BREAK_SRC=true; break
-            fi
-            
-            if [[ "$INP_UP" == "B" ]]; then
-                if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then break
-                else NAV_PATH=$(dirname "$NAV_PATH"); PAGE=1; continue; fi
-            fi
-            
-            if [[ "$INP_UP" == "N" ]]; then
-                if [[ $PAGE -lt $total_pages ]]; then PAGE=$((PAGE+1)); fi; continue
-            fi
-            if [[ "$INP_UP" == "P" ]]; then
-                if [[ $PAGE -gt 1 ]]; then PAGE=$((PAGE-1)); fi; continue
-            fi
-            
-            # Select All in View (or All in Folder? Lets do All in Folder for convenience)
-            if [[ "$INP_UP" == "A" ]]; then
-                 echo "Selecting all items..."
-                 for item in "${contents[@]}"; do
-                    full_p="${NAV_PATH%/}/$item"
-                    SELECTED_MAP["$full_p"]=1
-                 done
-                 continue
-            fi
-            
-            if [[ "$INP_UP" == "C" ]]; then
-                SELECTED_MAP=()
-                continue
-            fi
-
-            # Toggle Logic: "S <num>" or just "s<num>"
-            # Useful for selecting Directories without entering them
-            if [[ "$inp" =~ ^[sS][[:space:]]*([0-9]+)$ ]]; then
-                num="${BASH_REMATCH[1]}"
-                if [[ "$num" -gt 0 ]] && [[ "$num" -le "$PER_PAGE" ]]; then
-                     abs_idx=$(( start_idx + num - 1 ))
-                     if [[ $abs_idx -lt $total_items ]]; then
-                         item="${contents[$abs_idx]}"
-                         target="${NAV_PATH%/}/$item"
-                         
-                         if [[ -n "${SELECTED_MAP["$target"]}" ]]; then
-                             unset SELECTED_MAP["$target"]
-                         else
-                             SELECTED_MAP["$target"]=1
-                         fi
-                     fi
-                fi
-                continue
-            fi
-            
-            # Navigation Logic: Just number
-            # IMPROVEMENT: If file, Toggle it. If folder, Enter it.
-            if [[ "$inp" =~ ^[0-9]+$ ]]; then
-                num=$inp
-                if [[ "$num" -gt 0 ]] && [[ "$num" -le "$PER_PAGE" ]]; then
-                    abs_idx=$(( start_idx + num - 1 ))
-                    if [[ $abs_idx -lt $total_items ]]; then
-                        sel="${contents[$abs_idx]}"
-                        target="${NAV_PATH%/}/$sel"
-                        
-                        if [[ -d "$target" ]]; then
-                            # It is a directory -> Enter it
-                            NAV_PATH="$target"
-                            PAGE=1 # Reset page on enter
-                        else
-                            # It is a file -> Toggle selection (Smart UX)
-                            if [[ -n "${SELECTED_MAP["$target"]}" ]]; then
-                                unset SELECTED_MAP["$target"]
-                            else
-                                SELECTED_MAP["$target"]=1
-                            fi
-                        fi
-                    fi
-                fi
-            fi
-        done
-        
-        if [[ "$BREAK_SRC" == true ]]; then 
-            # Convert Map to Array for Main Logic
-            SELECTED_PATHS=()
-            for key in "${!SELECTED_MAP[@]}"; do
-                SELECTED_PATHS+=("$key")
-            done
-            return 0
-        fi
-    done
-}
-
-# --- 2. DESTINATION MODULE ---
-select_dest() {
-    while true; do
-        print_header
-        echo -e "${BOLD_YELLOW}[ STEP 2 ] SELECT DESTINATION${NC}"
-        # Brief Summary
-        count=${#SELECTED_PATHS[@]}
-        if [[ $count -gt 0 ]]; then
-             echo -e "Source: ${BOLD_CYAN}${SELECTED_PATHS[0]}${NC} $([ $count -gt 1 ] && echo "+ $((count-1)) more")"
-        fi
-        echo -e "------------------------------------------"
-        
-        mapfile -t mounts < <(mount | grep -E "type cifs|type nfs|type gpfs|type smb|on /mnt|on /media" | awk '{print $3 "|" $1}')
-        echo -e " [0] 🏠 HOME DIR ($HOME)"
-        echo -e " [1] 🌳 ROOT DIR (/)"
-        i=2
-        for line in "${mounts[@]}"; do
-            path=$(echo "$line" | cut -d'|' -f1)
-            src=$(echo "$line" | cut -d'|' -f2)
-            echo -e " [$i] 📂 ${BOLD_MAGENTA}$path${NC}"
-            echo -e "     └─ 🔗 Source: ${GREY}$src${NC}"
-            ((i++))
-        done
-        show_footer "[#] Select | [R] Refresh | [B] Back"
-        read -e pil || exit 1
-        
-        if [[ "${pil^^}" == "Q" ]]; then exit 0; fi
-        if [[ "${pil^^}" == "B" ]]; then return 1; fi
-        if [[ "${pil^^}" == "R" ]]; then continue; fi
-        
-        if [[ "$pil" == "0" ]]; then NAV_PATH="$HOME"
-elif [[ "$pil" == "1" ]]; then NAV_PATH="/"
-elif [[ "$pil" =~ ^[0-9]+$ ]] && [[ "$pil" -lt "$i" ]]; then 
-            idx=$((pil-2)); l="${mounts[$idx]}"; NAV_PATH=$(echo "$l" | cut -d'|' -f1)
-        else echo "Invalid!"; sleep 1; continue; fi
-
-        MOUNT_ROOT="$NAV_PATH"
-        BREAK_DEST=false
-        PAGE=1
-        PER_PAGE=15
-
-        while true; do
-            print_header
-            echo -e "${BOLD_YELLOW}[ BROWSE DESTINATION ]${NC} ${BOLD_WHITE}$NAV_PATH${NC}"
-            
-            mapfile -t contents < <(\ls -1 -A --group-directories-first --color=never "$NAV_PATH" 2>/dev/null)
-            total_items=${#contents[@]}
-
-            # Pagination Logic
-            total_pages=$(( (total_items + PER_PAGE - 1) / PER_PAGE ))
-            [ $total_pages -eq 0 ] && total_pages=1
-            [ $PAGE -gt $total_pages ] && PAGE=$total_pages
-            [ $PAGE -lt 1 ] && PAGE=1
-            
-            start_idx=$(( (PAGE - 1) * PER_PAGE ))
-
-            echo -e " ----------------------------------------"
-            echo -e " PAGE $PAGE of $total_pages | [0] ✅ SELECT CURRENT FOLDER"
-            echo -e " ----------------------------------------"
-
-            for (( i=0; i<PER_PAGE; i++ )); do
-                idx=$(( start_idx + i ))
-                if [[ $idx -ge $total_items ]]; then break; fi
-                
-                item="${contents[$idx]}"
-                fp="${NAV_PATH%/}/$item"
-                rel_num=$(( i + 1 ))
-
-                if [[ -d "$fp" ]]; then 
-                    echo -e " [$rel_num] 📁 ${BOLD_CYAN}$item/${NC}"
-                else
-                    echo -e " [$rel_num] 📄 $item"
-                fi
-            done
-            
-            NAV_MENU=""
-            if [[ $PAGE -lt $total_pages ]]; then NAV_MENU+="[N] Next | "; fi
-            if [[ $PAGE -gt 1 ]]; then NAV_MENU+="[P] Prev | "; fi
-            if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then BACK_MSG="Main Menu"; else BACK_MSG="Up (..)"; fi
-            
-            show_footer "${NAV_MENU}[#] Enter | [MK] New Folder | [0] Select | [B] $BACK_MSG"
-            read -e inp || exit 1
-            INP_UP="${inp^^}"
-            
-            if [[ "$INP_UP" == "B" ]]; then 
-                if [[ "$NAV_PATH" == "$MOUNT_ROOT" ]] || [[ "$NAV_PATH" == "/" ]]; then break; else NAV_PATH=$(dirname "$NAV_PATH"); PAGE=1; continue; fi
-            fi
-            
-            if [[ "$inp" == "0" ]]; then DEST_ROOT="$NAV_PATH"; BREAK_DEST=true; break; fi
-            if [[ "$INP_UP" == "MK" ]]; then read -e -p "New Folder Name: " new_f; mkdir -p "$NAV_PATH/$new_f"; continue; fi
-            
-            if [[ "$INP_UP" == "N" ]]; then if [[ $PAGE -lt $total_pages ]]; then PAGE=$((PAGE+1)); fi; continue; fi
-            if [[ "$INP_UP" == "P" ]]; then if [[ $PAGE -gt 1 ]]; then PAGE=$((PAGE-1)); fi; continue; fi
-
-            if [[ "$inp" =~ ^[0-9]+$ ]]; then
-                num=$inp
-                if [[ "$num" -gt 0 ]] && [[ "$num" -le "$PER_PAGE" ]]; then
-                    abs_idx=$(( start_idx + num - 1 ))
-                    if [[ $abs_idx -lt $total_items ]]; then
-                        sel="${contents[$abs_idx]}"
-                        target="${NAV_PATH%/}/$sel"
-                        if [[ -d "$target" ]]; then NAV_PATH="$target"; PAGE=1
-                        else echo -e "${BOLD_RED}Target is not a directory.${NC}"; sleep 1; fi
-                    fi
-                fi
-            fi
-        done
-        if [[ "$BREAK_DEST" == true ]]; then return 0; fi
-    done
-}
-
-# --- ADAPTIVE THREADS ---
-calc_optimal_threads() {
-    local mode="$1"
-    local cores=$(nproc)
-    local mem_total_mb=$(free -m | grep Mem | awk '{print $2}')
-    local mem_usable_mb=$(( mem_total_mb * 80 / 100 )) 
-    local max_threads_ram=$(( mem_usable_mb / 60 ))
-    [ $max_threads_ram -lt 2 ] && max_threads_ram=2
-    
-    local target_threads=1
-    
-    if [[ "$mode" == "SAFE" ]]; then
-        target_threads=$(awk -v c="$cores" 'BEGIN {printf "%.0f", c * 0.75}')
-        [ $target_threads -lt 1 ] && target_threads=1
-    else
-        target_threads=$(( cores * 4 ))
-        [ $target_threads -gt 24 ] && target_threads=24
-    fi
-    
-    if [[ $target_threads -gt $max_threads_ram ]]; then target_threads=$max_threads_ram; fi
-    [ $target_threads -gt 1024 ] && target_threads=1024
-    echo "$target_threads"
-}
-
 # --- MAIN LOGIC ---
 STEP=1
-
 while true; do
-    if [[ $STEP -eq 1 ]]; then 
-        select_source
+    if [[ $STEP -eq 1 ]]; then
+        select_source || exit 0
         if [[ ${#SELECTED_PATHS[@]} -eq 1 ]]; then 
             SUGGESTED_NAME=$(basename "${SELECTED_PATHS[0]}")
         else 
@@ -507,136 +44,63 @@ while true; do
         SUB_FOLDER="$SUGGESTED_NAME"
         STEP=2
     fi
-    if [[ $STEP -eq 2 ]]; then 
+
+    if [[ $STEP -eq 2 ]]; then
         select_dest
         if [[ $? -eq 1 ]]; then STEP=1; continue; fi
         STEP=3
     fi
 
-                # --- GLOBAL STATE FOR CALC ---
-                BG_CALC_PID=""
-                NEED_RECALC="true"
-                
-                # Helper to start calc safely
-                start_async_calc() {
-                    # Kill previous if running
-                    if [[ -n "$BG_CALC_PID" ]] && kill -0 "$BG_CALC_PID" 2>/dev/null; then
-                        pkill -P "$BG_CALC_PID" >/dev/null 2>&1
-                        kill "$BG_CALC_PID" >/dev/null 2>&1
-                    fi
-                    
-                    rm -f "/tmp/zturbo_sz_res_$$"
-                    
-                    (
-                        TEMP_SIZE=0
-                        for s in "${SELECTED_PATHS[@]}"; do
-                            # Local du
-                            sz=$(timeout 15 du -sb "$s" 2>/dev/null | awk '{print $1}')
-                            [ -z "$sz" ] && sz=0
-                            TEMP_SIZE=$((TEMP_SIZE + sz))
-                        done
-                        echo "$TEMP_SIZE" > "/tmp/zturbo_sz_res_$$"
-                    ) &
-                    BG_CALC_PID=$!
-                    NEED_RECALC="false"
-                }
-                        
-                            if [[ $STEP -eq 3 ]]; then
-                                # Trigger calc on entry if needed
-                                if [[ "$NEED_RECALC" == "true" ]]; then
-                                    start_async_calc
-                                fi
-                        
-                                while true; do
-                                    # Check status for display
-                                    if [[ -f "/tmp/zturbo_sz_res_$$" ]]; then
-                                        # Finished
-                                        TOTAL_SRC_SIZE=$(cat "/tmp/zturbo_sz_res_$$")
-                                        HR_SRC=$(numfmt --to=iec $TOTAL_SRC_SIZE 2>/dev/null || echo "?")                            
-                            DEST_FREE=$(df -k "$DEST_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')
-                            [ -z "$DEST_FREE" ] && DEST_FREE=0
-                            HR_FREE=$(numfmt --to=iec --from-unit=1K $DEST_FREE)
-                            
-                            if [[ "$DEST_FREE" -lt "$TOTAL_SRC_SIZE" ]]; then
-                                STATUS_MSG="${BOLD_RED}⚠️ WARNING: INSUFFICIENT DISK SPACE!${NC}"
-                            else
-                                STATUS_MSG="${BOLD_GREEN}✅ Disk Space OK${NC}"
-                            fi
-                        elif [[ -n "$BG_CALC_PID" ]] && kill -0 "$BG_CALC_PID" 2>/dev/null; then
-                            # Still running
-                            HR_SRC="${BOLD_YELLOW}Calculating...${NC}"
-                            HR_FREE="-"
-                            STATUS_MSG="${BOLD_YELLOW}⏳ Please wait...${NC}"
-                        else
-                            # Failed/Unknown
-                            HR_SRC="Unknown"
-                            HR_FREE="-"
-                            STATUS_MSG=""
-                        fi
+    if [[ $STEP -eq 3 ]]; then
+        # --- FINAL CONFIRMATION ---
+        while true; do
+            REC_THREADS=$(calc_optimal_threads "$CURRENT_MODE")
+            if [[ -z "$MANUAL_THREADS" ]]; then THREADS=$REC_THREADS; fi
+            if [[ "$CURRENT_MODE" == "SAFE" ]]; then MODE_MSG="${BOLD_GREEN}SAFE${NC}"; else MODE_MSG="${BOLD_RED}TURBO${NC}"; fi
             
-                        REC_THREADS=$(calc_optimal_threads "$CURRENT_MODE")
-                        if [[ -z "$MANUAL_THREADS" ]]; then THREADS=$REC_THREADS; fi
-                        if [[ "$CURRENT_MODE" == "SAFE" ]]; then MODE_MSG="${BOLD_GREEN}SAFE${NC}"; else MODE_MSG="${BOLD_RED}TURBO${NC}"; fi
-                        
-                        if [[ "$SUB_FOLDER" == "." ]]; then DEST="${DEST_ROOT%/}/"
-                        else DEST="${DEST_ROOT%/}/$SUB_FOLDER"; fi
-                        
-                        print_header
-                        echo -e "${BOLD_YELLOW}[ FINAL CONFIRMATION ]${NC}"
-                        echo -e " [1] SOURCE  : ${BOLD_WHITE}${SELECTED_PATHS[0]}${NC} $([ ${#SELECTED_PATHS[@]} -gt 1 ] && echo "(and $(( ${#SELECTED_PATHS[@]} - 1 )) others)")"
-                        echo -e " [2] DEST    : $DEST_ROOT"
-                        echo -e " [3] FOLDER  : $SUB_FOLDER"
-                        echo -e " [4] THREADS : ${BOLD_WHITE}$THREADS${NC} (Rec: $REC_THREADS) $MODE_MSG"
-                        echo -e " [5] MODE    : $CURRENT_MODE"
-                        echo -e "------------------------------------------"
-                        echo -e " [i] STORAGE : Source: ${BOLD_CYAN}$HR_SRC${NC} | Dest Free: ${BOLD_CYAN}$HR_FREE${NC}"
-                        if [[ -n "$STATUS_MSG" ]]; then echo -e "             $STATUS_MSG"; fi
-                        echo -e "------------------------------------------"
-                        echo -e " TARGET      : ${BOLD_GREEN}$DEST${NC}"
-                        echo -e "------------------------------------------"
-                        echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
-                        show_footer "Type 'OK' | [1-5] Edit | [MK] New Folder | [R] Refresh | [B] Back"
-                        
-                                    # Normal blocking read - FIXES INPUT LAG
-                                    read -e k || exit 1
-                                    
-                                    if [[ "${k^^}" == "OK" ]]; then
-                                        # User wants to START. Do not wait for slow background calc.
-                                        if [[ -n "$BG_CALC_PID" ]] && kill -0 "$BG_CALC_PID" 2>/dev/null; then
-                                            echo -e "\n>> Stopping background calculation and starting transfer..."
-                                            pkill -P "$BG_CALC_PID" >/dev/null 2>&1
-                                            kill "$BG_CALC_PID" >/dev/null 2>&1
-                                        fi
-                                        
-                                        # Grab whatever result we have so far
-                                        if [[ -f "/tmp/zturbo_sz_res_$$" ]]; then
-                                            TOTAL_SRC_SIZE=$(cat "/tmp/zturbo_sz_res_$$")
-                                        else
-                                            TOTAL_SRC_SIZE=0 # Will be recalculated in foreground if needed
-                                        fi
-                                        break 2
-                                    fi            
-                        case "${k^^}" in
-                Q) if [[ -n "$BG_CALC_PID" ]]; then if ps -p "$BG_CALC_PID" >/dev/null; then kill "$BG_CALC_PID"; fi; fi; exit 0 ;;
+            if [[ "$SUB_FOLDER" == "." ]]; then DEST="${DEST_ROOT%/}/"
+            else DEST="${DEST_ROOT%/}/$SUB_FOLDER"; fi
+
+            print_header
+            echo -e "${BOLD_YELLOW}[ FINAL CONFIRMATION ]${NC}"
+            echo -e " [1] SOURCE  : ${BOLD_WHITE}${SELECTED_PATHS[0]}${NC} $([ ${#SELECTED_PATHS[@]} -gt 1 ] && echo "(and $(( ${#SELECTED_PATHS[@]} - 1 )) others)")"
+            echo -e " [2] DEST    : $DEST_ROOT"
+            echo -e " [3] FOLDER  : $SUB_FOLDER"
+            echo -e " [4] THREADS : ${BOLD_WHITE}$THREADS${NC} (Rec: $REC_THREADS) $MODE_MSG"
+            echo -e " [5] MODE    : $CURRENT_MODE"
+            echo -e "------------------------------------------"
+            echo -e " TARGET      : ${BOLD_GREEN}$DEST${NC}"
+            echo -e "------------------------------------------"
+            echo -e " ${BOLD_RED}⚠️  To START, Type 'OK' and Press Enter.${NC}"
+            show_footer "Type 'OK' | [1-5] Edit | [B] Back"
+            
+            read -e k || exit 1
+                                
+            if [[ "${k^^}" == "OK" ]]; then
+                echo ">> Calculating Source Metadata (Please Wait)..."
+                calculate_total_source_size
+                write_job_info
+                break 2
+            fi
+
+            case "${k^^}" in
+                Q) exit 0 ;;
                 B) STEP=2; break ;;
-                R) continue ;;
-                MK) read -e -p "Create folder in Dest: " new_sub; mkdir -p "$DEST_ROOT/$new_sub"; DEST_ROOT="$DEST_ROOT/$new_sub"; NEED_RECALC="true"; start_async_calc ;;
-                1) select_source; NEED_RECALC="true"; start_async_calc ;;
-                2) select_dest; NEED_RECALC="true"; start_async_calc ;;
+                1) select_source ;;
+                2) select_dest ;;
                 3) read -e -p "New Folder Name: " -i "$SUB_FOLDER" SUB_FOLDER ;; 
                 4) read -e -p " Set Threads manually: " MANUAL_THREADS || exit 1 ;; 
-                5) [[ "$CURRENT_MODE" == "SAFE" ]] && CURRENT_MODE="TURBO" || CURRENT_MODE="SAFE" ;; 
+                5) [[ "$CURRENT_MODE" == "SAFE" ]] && CURRENT_MODE="TURBO" || CURRENT_MODE="SAFE" ;;
             esac
         done
         if [[ $STEP -ne 3 ]]; then continue; fi
     fi
-
-
 done
 
 # --- EXECUTION ---
 print_header
 echo -e "\n${BOLD_CYAN}🚀 INITIALIZING TRANSFER...${NC}"
+echo "   (You can now run 'zmturbo' in another terminal to monitor progress)"
 
 START_TIME=$(date +%s); START_DATE=$(date)
 cat <<EOF > "$REPORT_TXT"
@@ -654,226 +118,7 @@ EOF
 for s in "${SELECTED_PATHS[@]}"; do echo " - $s" >> "$REPORT_TXT"; done
 echo "================================================================" >> "$REPORT_TXT"
 
-if [[ ${#SELECTED_PATHS[@]} -gt 1 ]]; then MON_SRC="${SELECTED_PATHS[0]}..++"; else MON_SRC="${SELECTED_PATHS[0]}"; fi
-MON_START_TIME=$(date +%s)
+main_execution
 
-# Initial Monitor File with Status 'CALC' temporarily
-echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|CALC|$MON_START_TIME" > "$MONITOR_FILE"
-chmod 666 "$MONITOR_FILE" 2>/dev/null
-
-# --- OPTIMIZED METADATA HANDOVER (BUGFIXED) ---
-# Ensure TOTAL_SRC_SIZE is a valid integer
-if [[ -z "$TOTAL_SRC_SIZE" ]] || ! [[ "$TOTAL_SRC_SIZE" =~ ^[0-9]+$ ]]; then
-    TOTAL_SRC_SIZE=0
-fi
-
-if [[ "$TOTAL_SRC_SIZE" -gt 0 ]]; then
-    echo ">> Using cached source metadata..."
-    # Convert 1K blocks (du -s) to Bytes for accurate progress
-    CALC_BYTES=$TOTAL_SRC_SIZE
-    
-    echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$CALC_BYTES|$MON_START_TIME" > "$MONITOR_FILE"
-    echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
-    PID_CALC="" 
-else
-    # Fallback: If cache missed/invalid, calculate NOW (Foreground) to ensure data safety
-    echo ">> Recalculating Source Metadata (Please Wait)..."
-    CALC_BYTES=0
-    for s in "${SELECTED_PATHS[@]}"; do
-        sb=$(du -sb "$s" 2>/dev/null | cut -f1)
-        [ -z "$sb" ] && sb=0
-        CALC_BYTES=$((CALC_BYTES + sb))
-    done
-    
-    echo "$$|$REAL_USER|$CURRENT_MODE|$MON_SRC|$DEST|$CALC_BYTES|$MON_START_TIME" > "$MONITOR_FILE"
-    echo "$CALC_BYTES" > "/tmp/zturbo_size_$$"
-    PID_CALC="" # Done in foreground, no need to wait
-fi
-
-# --- ROBUST WRAPPERS ---
-# Retry logic prevents failures on network glitches (Router Safety)
-
-run_rsync_retry() {
-    local cmd="$1"
-    local desc="$2"
-    local max_retries=3
-    local attempt=1
-    
-    while [[ $attempt -le $max_retries ]]; do
-        if [[ $attempt -gt 1 ]]; then 
-            echo "   ⚠️  Retry $attempt/$max_retries for: $desc..." | tee -a "$REPORT_TXT"
-            sleep 3
-        fi
-        
-        # Execute Command and check status
-        echo ">> Executing: $desc" | tee -a "$REPORT_TXT"
-        eval "$cmd"
-        status=$?
-        
-        if [[ $status -eq 0 ]]; then
-            return 0
-        fi
-        
-        echo "   ❌ Error (Code $status) on: $desc" | tee -a "$REPORT_TXT"
-        ((attempt++))
-    done
-    return 1
-}
-
-if [[ "$CURRENT_MODE" == "SAFE" ]]; then 
-    PREFIX="nice -n 10 ionice -c 2 -n 7"
-    RSYNC_OPTS="-av --no-p --no-t --omit-dir-times --timeout=600 --partial-dir=.zturbo_partial"
-else 
-    PREFIX=""
-    RSYNC_OPTS="-aW --no-p --no-t --omit-dir-times --inplace --sparse --no-compress --timeout=600 --info=progress2"
-    FPSYNC_OPTS="-lptgoD --numeric-ids --sparse --no-compress -W --inplace --timeout=60 --info=progress2"
-fi
-
-dynamic_governor &
-GOV_PID=$!
-EXIT_CODE=0
-
-if [[ ${#SELECTED_PATHS[@]} -gt 1 ]]; then
-    if [[ "$CURRENT_MODE" == "SAFE" ]]; then
-        echo ">> Multi-select detected (SAFE MODE - Sequential)."
-        # Format source list
-        SRCS=()
-        for s in "${SELECTED_PATHS[@]}"; do
-            SRCS+=("\"$s\"")
-        done
-        cmd="$PREFIX rsync $RSYNC_OPTS ${SRCS[*]} \"$DEST\""
-        run_rsync_retry "$cmd" "Batch Transfer"
-        EXIT_CODE=$?
-    else
-        echo ">> Multi-select detected (TURBO MODE - Hybrid)."
-        BG_PIDS=()
-        
-        wait_bg_files() {
-            if [[ ${#BG_PIDS[@]} -gt 0 ]]; then
-                echo ">> Waiting for ${#BG_PIDS[@]} pending files..." | tee -a "$REPORT_TXT"
-                for pid in "${BG_PIDS[@]}"; do
-                    wait "$pid" 2>/dev/null
-                done
-                BG_PIDS=()
-            fi
-        }
-
-        for s in "${SELECTED_PATHS[@]}"; do
-            fname=$(basename "$s")
-            S_ARG="\"$s\""
-            
-            if [[ -d "$s" ]]; then # This check might fail for remote, simplified as directory for now if remote
-                wait_bg_files
-                cmd="$PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v -o \"$FPSYNC_OPTS\" $S_ARG \"$DEST\""
-                run_rsync_retry "$cmd" "$fname"
-                [ $? -ne 0 ] && EXIT_CODE=1
-            else
-                echo ">> [File] Background Start: $fname" | tee -a "$REPORT_TXT"
-                (
-                    cmd="$PREFIX rsync $RSYNC_OPTS $S_ARG \"$DEST\""
-                    run_rsync_retry "$cmd" "$fname"
-                ) &
-                BG_PIDS+=($!)
-            fi
-        done
-        wait_bg_files
-    fi
-else
-    # Single Source Selection
-    s="${SELECTED_PATHS[0]}"
-    fname=$(basename "$s")
-    S_ARG="\"$s\""
-    
-    if [[ "$CURRENT_MODE" == "SAFE" ]]; then
-        cmd="$PREFIX rsync $RSYNC_OPTS $S_ARG \"$DEST\""
-        run_rsync_retry "$cmd" "$fname"
-        EXIT_CODE=$?
-    else
-        if [[ -d "$s" ]]; then
-            cmd="$PREFIX fpsync -n $THREADS -f $FILES_PER_JOB -v -o \"$FPSYNC_OPTS\" $S_ARG \"$DEST\""
-        else
-            cmd="$PREFIX rsync $RSYNC_OPTS $S_ARG \"$DEST\""
-        fi
-        run_rsync_retry "$cmd" "$fname"
-        EXIT_CODE=$?
-    fi
-fi
-
-JOB_COMPLETED=true
-if [[ -n "$PID_CALC" ]]; then wait $PID_CALC; fi
-
-if [[ -f "/tmp/zturbo_size_$$" ]]; then
-    SRC_BYTES=$(cat "/tmp/zturbo_size_$$")
-    rm -f "/tmp/zturbo_size_$$"
-else
-    SRC_BYTES=0
-fi
-
-echo -e "\n${BOLD_YELLOW}🔎 VERIFYING DATA INTEGRITY...${NC}"
-
-# Simple verification logic
-calc_path_info() {
-    # $1 = type (src/dest), $2 = path(s)
-    # Return count and size
-    echo "0 0" # Placeholder for complex logic in simple update
-}
-
-# (Simplified verification for robustness in this snippet - keeping original logic roughly) 
-# ... [Original verification logic retained but shortened for this write_file to save tokens if needed, 
-# but let's just keep the original structure for safety] ...
-
-calc_source() {
-    T_BYTES=0; T_FILES=0
-    for s in "${SELECTED_PATHS[@]}"; do
-        if [[ ! -e "$s" ]]; then continue; fi
-        b=$(du -sb "$s" 2>/dev/null | cut -f1)
-        [ -z "$b" ] && b=0
-        if [[ -d "$s" ]]; then f=$(find "$s" -type f | wc -l); else f=1; fi
-        T_BYTES=$((T_BYTES + b)); T_FILES=$((T_FILES + f))
-    done
-    echo "$T_BYTES $T_FILES" > /tmp/dt_src_$$
-}
-
-calc_dest() {
-    local target="$1"
-    if [[ ! -e "$target" ]]; then echo "0 0" > /tmp/dt_dest_$$; return; fi
-    b=$(du -sb "$target" 2>/dev/null | cut -f1)
-    [ -z "$b" ] && b=0
-    if [[ -d "$target" ]]; then f=$(find "$target" -type f | wc -l); else f=1; fi
-    echo "$b $f" > /tmp/dt_dest_$$
-}
-
-calc_source & PID_SRC=$!
-calc_dest "$DEST" & PID_DEST=$!
-wait $PID_SRC; wait $PID_DEST
-
-read SRC_BYTES SRC_FILES < /tmp/dt_src_$$
-read DEST_BYTES DEST_FILES < /tmp/dt_dest_$$
-rm -f /tmp/dt_src_$$ /tmp/dt_dest_$$
-
-if [[ "$SRC_BYTES" -eq "$DEST_BYTES" ]]; then SIZE_STATUS="MATCH ✅"; else SIZE_STATUS="MISMATCH ❌"; fi
-if [[ "$SRC_FILES" -eq "$DEST_FILES" ]]; then FILE_STATUS="MATCH ✅"; else FILE_STATUS="MISMATCH ❌"; fi
-if [[ $EXIT_CODE -eq 0 ]]; then 
-    if [[ "$SIZE_STATUS" == *"MATCH"* ]] && [[ "$FILE_STATUS" == *"MATCH"* ]]; then FINAL_STATUS="SUCCESS"; else FINAL_STATUS="WARNING"; fi
-else FINAL_STATUS="FAILED ($EXIT_CODE)"; fi
-
-END_TIME=$(date +%s); DURATION=$((END_TIME - START_TIME)); DUR_FMT=$(format_duration $DURATION)
-
-cat <<EOF >> "$REPORT_TXT"
-
-================================================================
-                  RECONCILIATION REPORT
-================================================================
-METRIC         SOURCE            DESTINATION       STATUS
-----------------------------------------------------------------
-Total Bytes    $SRC_BYTES        $DEST_BYTES       $SIZE_STATUS
-Total Files    $SRC_FILES              $DEST_FILES             $FILE_STATUS
-----------------------------------------------------------------
-Duration    : $DUR_FMT
-Final Status: $FINAL_STATUS
-================================================================
-EOF
-
-rm -f "$MONITOR_FILE"
-echo -e "\n✅ ${BOLD_GREEN}COMPLETED!${NC} Report saved to $REPORT_TXT"
-echo -e "Status: $FINAL_STATUS"
+# --- VERIFICATION ---
+post_execution_verification

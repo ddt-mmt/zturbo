@@ -33,7 +33,7 @@ if [ -n "$SUDO_USER" ]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
 
 # FIX: Use standard HOME to match zturbo output location
 # This ensures we find reports even if running as root/sudo
-DASHBOARD_DIR="$HOME/.zturbo/dashboard_data"
+DASHBOARD_DIR="/tmp/zturbo_dashboard"
 REPORT_DIR="$HOME/.zturbo/reports"
 mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
 
