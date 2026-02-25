@@ -1,6 +1,6 @@
 # 🚀 ZTURBO - High Performance Data Transfer Engine
 
-![Version](https://img.shields.io/badge/version-1.3.4%20(Enterprise)-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.5%20(Patched)-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg?style=flat-square)
 
@@ -10,15 +10,16 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 
 ---
 
-## 🔥 Key Features (V1.3.4 Enterprise)
+## 🔥 Key Features (V1.3.5 Patched)
 
 ### 1. Robust & Resilient
-*   **🌐 Remote SSH Integration**: Seamlessly pull data from remote servers (TrueNAS, Direct Linux) using optimized SSH tunnels.
 *   **🛡️ Auto-Retry Mechanism**: Automatically retries transfers (up to 3 times) in case of packet loss or transient network interruptions.
 *   **⏱️ Smart Timeout**: Detects "zombie" connections and resets them automatically to prevent resource exhaustion on network routers.
 *   **💾 Pre-Flight Check**: Calculates source data size against destination disk availability before execution to prevent "Disk Full" errors.
 *   **📂 Persistent Logs**: Job history and reports are securely stored in `~/.zturbo/reports`, safe from reboots or tool updates.
 *   **⌨️ Smart Input**: Full *Readline* support (Backspace/Arrow keys) in all interactive menus for a seamless user experience.
+*   **🔩 SMB/CIFS Compatibility**: Includes special `rsync` flags (`--no-p`, `--no-t`) and increased timeouts to ensure reliable transfers to Windows SMB/CIFS shares.
+
 
 ### 2. Hybrid Parallel Engine
 *   **🚀 File Parallelism**: Executes individual files in the **background (Parallel)** to saturate network bandwidth instantly.
@@ -35,6 +36,10 @@ This toolkit leverages the reliability of `rsync` and the speed of `fpsync` with
 ---
 
 ## 📝 Changelog
+
+### V1.3.5 (Community Patch)
+*   **🔧 SMB/CIFS Compatibility**: Added `--no-p`, `--no-t`, `--omit-dir-times` flags and increased timeout to 600s for `rsync` to prevent common errors when transferring to SMB shares.
+*   **🗑️ Feature Removal**: Removed the "Remote SSH Source" feature for simplification and security hardening.
 
 ### V1.3.4 (Stable Release)
 *   **🛠️ Monitor Fix**: Resolved critical UI freeze issue by moving size calculation (`du`) to background process.
