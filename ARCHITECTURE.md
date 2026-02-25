@@ -29,7 +29,7 @@ graph TD
     
     subgraph Monitoring System
         ZTURBO -->|Create Job Dir| JobDir[Job Directory (.zturbo_dashboard/ID)]
-        JobDir -->|Write Info/Status| JobFiles(info, status, pid, du.res, du.lock, zmturbo_cache, zmturbo_meta)
+        JobDir -->|Write Info/Status| JobFiles[Monitor Files]
         ZMTURBO -->|Read JobFiles| JobFiles
         ZMTURBO -->|Display| TUI[Terminal UI]
     end
