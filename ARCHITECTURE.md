@@ -1,8 +1,8 @@
-# ZTURBO Architecture Blueprint
+# ZTURBO Architecture Blueprint (V1.3.5 Modular & Refined)
 
 ## 1. High-Level Overview
 
-ZTURBO is designed as a modular shell-based application that leverages native Linux tools (`rsync`, `fpsync`, `du`, `find`) to perform high-performance data transfers. It separates the "Transfer Logic" from the "Monitoring Logic" to ensure stability and responsiveness.
+ZTURBO is a modular shell-based application that leverages native Linux tools (`rsync`, `fpsync`, `du`, `find`) for high-performance data transfers. It now features a robust asynchronous `du`-based monitoring system for real-time progress updates.
 
 ```mermaid
 graph TD
@@ -11,12 +11,10 @@ graph TD
     
     subgraph Source Selection
         ZTURBO -->|Local| LocalFiles[Local FS / Mounts]
-        ZTURBO -->|Remote| RemoteSSH[SSH Source / TrueNAS]
     end
 
     subgraph Core Engine
         LocalFiles --> ModeSelect{Select Mode}
-        RemoteSSH --> ModeSelect
         ModeSelect -->|Safe Mode| Sequential[Sequential Rsync]
         ModeSelect -->|Turbo Mode| Hybrid[Hybrid Parallel Engine]
         
@@ -30,9 +28,9 @@ graph TD
     end
     
     subgraph Monitoring System
-        TransferProcess -->|Status| DashboardFile[Dashboard .info File]
-        BackgroundJobs -->|Status| DashboardFile
-        ZMTURBO -->|Read| DashboardFile
+        ZTURBO -->|Create Job Dir| JobDir[Job Directory (.zturbo_dashboard/ID)]
+        JobDir -->|Write Info/Status| JobFiles(info, status, pid, du.res, du.lock, zmturbo_cache, zmturbo_meta)
+        ZMTURBO -->|Read JobFiles| JobFiles
         ZMTURBO -->|Display| TUI[Terminal UI]
     end
 ```
@@ -45,29 +43,24 @@ The core logic of `zturbo` handles user input, path selection, and mode switchin
 sequenceDiagram
     participant User
     participant Menu as Menu System
-    participant SSH as SSH Module
-    participant Calc as Size Calculator
+    participant Utils as Utility Functions
     participant Engine as Transfer Engine
     participant Log as Report Generator
 
-    User->>Menu: Select Source (Local/Remote)
-    alt is Remote
-        Menu->>SSH: Prompt User/IP & Path
-        SSH->>SSH: Test Connection
-        SSH-->>Menu: Connection Success
-    end
-    
+    User->>Menu: Select Source (Local FS / Mounts)
     User->>Menu: Select Destination Path
-    Menu->>Calc: Background Size Calculation (Local/SSH)
-    Calc-->>Menu: Return Total Size & File Count
+    
+    Menu->>Utils: Calculate Total Source Size
+    Utils-->>Menu: Return Total Size
     
     User->>Menu: Select Mode (SAFE/TURBO)
     User->>Menu: Confirm (Type 'OK')
     
-    Note over Menu, Engine: Critical Handover
+    Note over Menu, Engine: Initialize Job & Handover
     
     Menu->>Engine: Initialize Transfer
     Engine->>Log: Create Start Report
+    Engine->>Utils: Start Dynamic Governor
     
     alt SAFE MODE
         Engine->>Engine: Run Single Rsync (Blocking)
@@ -82,18 +75,11 @@ sequenceDiagram
         Engine->>Engine: Wait for All PIDs
     end
     
-    Engine->>Log: Write Completion Report
-    Engine-->>User: Show Success/Failure
+    Engine->>Utils: Post-Execution Verification
+    Utils-->>Log: Write Reconciliation Report
+    Utils-->>User: Show Final Status
 ```
 
-## 3. Remote SSH Integration
-
-ZTURBO V1.3.4 introduces native SSH integration for remote sources.
-
-*   **Connection Handling**: Uses standard SSH with `ConnectTimeout` and `BatchMode` checks.
-*   **Remote Metadata**: Executes `du` over SSH to calculate source sizes before transfer.
-*   **Data Pathing**: Automatically translates selected remote paths into `user@ip:path` format for `rsync` and `fpsync`.
-*   **Security**: Leverages existing SSH key-based authentication for seamless non-interactive transfers.
 
 ## 4. Directory Structure & Components
 
@@ -101,19 +87,32 @@ ZTURBO V1.3.4 introduces native SSH integration for remote sources.
 classDiagram
     class ZTURBO_Package {
         +install.sh
+        +uninstall.sh
         +README.md
     }
     
-    class Binaries {
-        +zturbo (Main Script)
+    class Modular_Scripts {
+        +zturbo (Main Launcher)
         +zmturbo (Monitor)
+        +lib/
+        +-- config.sh
+        +-- utils.sh
+        +-- ui.sh
+        +-- engine.sh
     }
     
-    class TempFiles {
-        +/tmp/zturbo_dashboard/*.info
-        +/tmp/zturbo_reports/*.txt
+    class Job_Management {
+        +/tmp/zturbo_dashboard/JOB_ID/
+        +-- pid
+        +-- info
+        +-- status
+        +-- du.res
+        +-- du.lock
+        +-- zmturbo_cache
+        +-- zmturbo_meta
+        +$HOME/.zturbo/reports/*.txt
     }
     
-    ZTURBO_Package *-- Binaries
-    Binaries --> TempFiles : Creates/Reads
+    ZTURBO_Package *-- Modular_Scripts
+    Modular_Scripts --> Job_Management : Manages
 ```

@@ -1,5 +1,5 @@
 #!/bin/bash
-# ZTURBO Universal Installer
+# ZTURBO V1.3.5 (Modular & Refined) Installer
 # Standard: Enterprise English Interface
 # Support: Debian, Ubuntu, Kali, CentOS, RHEL, AlmaLinux, Rocky, Fedora, Arch
 
@@ -34,20 +34,29 @@ else
     echo "⚠️  Warning: Package manager not identified. Please ensure 'rsync' and 'fpart' are installed manually."
 fi
 
-echo ">> Deploying binaries..."
-if [ ! -f "zturbo" ] || [ ! -f "zmturbo" ]; then
-    echo "❌ Critical Error: Source binaries (zturbo/zmturbo) not found in current directory."
+echo ">> Deploying ZTURBO binaries and modules..."
+
+# Memverifikasi keberadaan file sumber
+if [ ! -f "zturbo" ] || [ ! -f "zmturbo" ] || [ ! -d "lib" ]; then
+    echo "❌ Critical Error: Source binaries (zturbo/zmturbo) or lib directory not found in current directory."
     exit 1
 fi
 
-mkdir -p /usr/local/bin
+# Membuat direktori lib untuk modul dan menyalin modul
+mkdir -p /usr/lib/zturbo
+cp lib/*.sh /usr/lib/zturbo/
+chmod 644 /usr/lib/zturbo/*.sh # Modul tidak perlu executable
+
+# Menyalin skrip utama ke PATH
 cp zturbo /usr/local/bin/
 cp zmturbo /usr/local/bin/
-chmod +x /usr/local/bin/zturbo /usr/local/bin/zmturbo
+chmod +x /usr/local/bin/zturbo /usr/local/bin/zmturbo # Skrip utama perlu executable
 
 echo "==============================================="
-echo "✅ ZTURBO INSTALLED SUCCESSFULLY!"
+echo "✅ ZTURBO V1.3.5 (Modular & Refined) INSTALLED SUCCESSFULLY!"
 echo "==============================================="
 echo "   Execution Command: zturbo"
 echo "   Monitoring Command: zmturbo"
+echo "   Module Directory: /usr/lib/zturbo"
+echo "   Reports & Dashboard: ~/.zturbo/reports & /tmp/zturbo_dashboard"
 echo "==============================================="
