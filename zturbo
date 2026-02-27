@@ -16,7 +16,7 @@ source "/usr/lib/zturbo/engine.sh"
 
 # Inisialisasi awal
 mkdir -p "$DASHBOARD_DIR" "$REPORT_DIR"
-chmod 777 "$DASHBOARD_DIR" "$REPORT_DIR" 2>/dev/null
+chmod 700 "$DASHBOARD_DIR" "$REPORT_DIR" 2>/dev/null
 if [[ -n "$SUDO_USER" ]]; then REAL_USER="$SUDO_USER"; else REAL_USER="$USER"; fi
 export JOB_ID="${REAL_USER}_$$"
 export JOB_DIR="${DASHBOARD_DIR}/${JOB_ID}"

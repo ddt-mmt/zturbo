@@ -159,7 +159,7 @@ LOOP_IDX=0
     declare -A processed_pids
 
     shopt -s nullglob
-    for job_dir in /tmp/zturbo_dashboard/*/; do
+    for job_dir in "$DASHBOARD_DIR"/*/; do
         if [ -f "${job_dir}/pid" ]; then
             pid=$(cat "${job_dir}/pid" 2>/dev/null | tr -d ' \n')
             
@@ -391,12 +391,24 @@ LOOP_IDX=0
     if [[ "${key^^}" == "K" ]]; then
         while true; do
             clear; echo -e "${R}>>> 🛑 PROCESS KILL MANAGER <<<${NC}"
-            i=1; declare -a kp; shopt -s nullglob
-            for f in $DASHBOARD_DIR/*.info /tmp/zturbo_dashboard/*.info; do
-                [ ! -f "$f" ] && continue
-                IFS='|' read -r pid ow mode src dst tot st < "$f"
-                if [ "$ow" == "$REAL_USER" ] || [ "$EUID" -eq 0 ]; then
-                    echo " [$i] PID: $pid | User: $ow | Task: $(basename "$dst")"; kp[$i]="$pid"; ((i++))
+            i=1; declare -a kp kd; shopt -s nullglob
+            for job_dir in "$DASHBOARD_DIR"/*/; do
+                [ ! -d "$job_dir" ] && continue
+                pid_file="${job_dir}pid"
+                info_file="${job_dir}info"
+
+                if [ -f "$pid_file" ] && [ -f "$info_file" ]; then
+                    pid=$(cat "$pid_file" 2>/dev/null | tr -d ' \n')
+                    if [ -z "$pid" ] || ! ps -p "$pid" > /dev/null 2>&1; then
+                        continue
+                    fi
+
+                    IFS='|' read -r _ ow mode dest _ _ <<< "$(cat "$info_file")"
+
+                    if [ "$ow" == "$REAL_USER" ] || [ "$EUID" -eq 0 ]; then
+                        echo " [$i] PID: $pid | User: $ow | Task: $(basename "$dest")"
+                        kp[$i]="$pid"; kd[$i]="$job_dir"; ((i++))
+                    fi
                 fi
             done
             [[ $i -eq 1 ]] && { echo " (No active jobs)"; sleep 2; break; }
@@ -404,16 +416,23 @@ LOOP_IDX=0
             [[ "${act^^}" == "B" ]] && break
             [[ "$act" =~ ^[0-9]+$ && "$act" -lt "$i" ]] && {
                 t_pid=${kp[$act]}
+                t_dir=${kd[$act]}
                 read -e -p "Confirm termination of PID $t_pid? (y/n): " cf
                 if [[ "${cf^^}" == "Y" ]]; then
                     echo -e " ${Y}NOTE: If process is in 'D' state (IO Wait), it cannot be killed.${NC}"
-                    PGID=$(ps -o pgid= -p $t_pid 2>/dev/null | grep -o '[0-9]*')
+                    PGID=$(ps -o pgid= -p "$t_pid" 2>/dev/null | grep -o '[0-9]*')
                     if [ -n "$PGID" ]; then kill -TERM -- -"$PGID"; sleep 0.5; kill -KILL -- -"$PGID";
-                    else pkill -P $t_pid; kill $t_pid; fi
+                    else pkill -P "$t_pid"; kill "$t_pid"; fi
                     
-                    IFS='|' read -r _ _ _ _ t_dest _ _ < "$DASHBOARD_DIR/$t_pid.info"
-                    [ -n "$t_dest" ] && [ -d "$t_dest" ] && fuser -k -9 -m "$t_dest" &>/dev/null
-                    rm -f "$DASHBOARD_DIR/"*"$t_pid"*.info /tmp/zturbo_dashboard/*"$t_pid"*.info &>/dev/null
+                    # Read destination from info file before deleting
+                    if [ -f "${t_dir}info" ]; then
+                        IFS='|' read -r _ _ _ t_dest _ _ < "${t_dir}info"
+                        [ -n "$t_dest" ] && [ -d "$t_dest" ] && fuser -k -9 -m "$t_dest" &>/dev/null
+                    fi
+                    
+                    # Remove the entire job directory
+                    rm -rf "$t_dir"
+                    echo "Job PID $t_pid terminated and cleaned up."
                     sleep 1
                 fi
             }

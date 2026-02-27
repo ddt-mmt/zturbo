@@ -4,7 +4,7 @@
 CPU_CORES=$(nproc)
 CURRENT_MODE="SAFE" 
 FILES_PER_JOB=2500
-DASHBOARD_DIR="/tmp/zturbo_dashboard"
+DASHBOARD_DIR="$HOME/.zturbo/dashboard_data"
 REPORT_DIR="$HOME/.zturbo/reports"
 
 # --- STYLES ---
